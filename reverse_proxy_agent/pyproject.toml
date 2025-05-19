@@ -19,6 +19,7 @@ SQLAlchemy        = "^2.0"
 python-dotenv     = "^1.0"
 pydantic          = "^2.7"
 pydantic-settings = "^2.3"
+typer = { version = "^0.9.0", extras = ["all"] }
 
 # ---------- Dev dependencies ----------
 [tool.poetry.group.dev.dependencies]
@@ -33,7 +34,7 @@ freezegun      = "^1.4"
 
 # ---------- CLI entry ----------
 [tool.poetry.scripts]
-reverse-proxy-agent = "reverse_proxy_agent.api:run"
+reverse-proxy-agent = "reverse_proxy_agent.cli:app"
 
 # ---------- Build backend ----------
 [build-system]

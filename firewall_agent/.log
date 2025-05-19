@@ -1,11 +1,12 @@
 ============================== PROJECT TREE ==============================
 .
-├── config.py
 ├── data
 ├── docker-compose.dev.yml
 ├── docker-compose.prod.yml
 ├── Dockerfile.dev
 ├── Dockerfile.prod
+├── .dockerignore
+├── entrypoint.sh
 ├── .env
 ├── firewall_agent
 │   ├── api.py
@@ -29,55 +30,9 @@
 └── tests
     └── test_firewall_agent.py
 
-7 directories, 22 files
+7 directories, 23 files
 
 ============================ FILE CONTENTS ==============================
------------------------------- config.py ------------------------------
-       1	import os
-       2	from typing import Dict
-       3	from dotenv import load_dotenv
-       4	
-       5	# Load environment variables from .env file once
-       6	load_dotenv()
-       7	
-       8	
-       9	def get_env_str(name: str) -> str:
-      10	    """
-      11	    Retrieve an environment variable or raise an error if missing.
-      12	    """
-      13	    value = os.getenv(name)
-      14	    if not value:
-      15	        raise RuntimeError(f"Environment variable '{name}' must be set")
-      16	    return value
-      17	
-      18	
-      19	def get_env_int(name: str) -> int:
-      20	    """
-      21	    Retrieve an environment variable as int or raise error if missing/invalid.
-      22	    """
-      23	    val_str = get_env_str(name)
-      24	    try:
-      25	        return int(val_str)
-      26	    except ValueError:
-      27	        raise RuntimeError(
-      28	            f"Environment variable '{name}' must be an integer, got '{val_str}'")
-      29	
-      30	
-      31	# Required configuration variables
-      32	
-      33	PREFIX = get_env_str("PREFIX")
-      34	API_KEY = get_env_str("API_KEY")
-      35	API_SECRET = get_env_str("API_SECRET")
-      36	REMOTE_URL = get_env_str("REMOTE_URL")
-      37	CORE_URL = get_env_str("CORE_URL")
-      38	TIMEOUT = get_env_int("TIMEOUT")
-      39	DB_PATH = get_env_str("DB_PATH")  # local SQLite path constant
-      40	ACTION_MAP: Dict[str, str] = {
-      41	    "pass": "pass",
-      42	    "block": "block",
-      43	    "reject": "block",
-      44	}
-
 ------------------------------ docker-compose.dev.yml ------------------------------
        1	# docker-compose.dev.yml
        2	services:
@@ -103,7 +58,7 @@
        8	    env_file:
        9	      - .env
       10	    ports:
-      11	      - "8000:8000"
+      11	      - "$PORT:8000"
       12	    volumes:
       13	      - ./data:/app/data
       14	    restart: always
@@ -112,68 +67,77 @@
        1	# Dockerfile.dev
        2	FROM python:3.12-alpine
        3	
-       4	RUN apk add --no-cache \
-       5	      bash \
-       6	      musl-dev \
-       7	      libffi-dev \
-       8	      openssl-dev
-       9	
-      10	RUN pip install --no-cache poetry
-      11	
-      12	WORKDIR /app
-      13	RUN mkdir -p data
-      14	COPY pyproject.toml README.md ./
+       4	RUN apk add --no-cache --virtual .build-deps \
+       5	      musl-dev \
+       6	      libffi-dev \
+       7	      openssl-dev
+       8	
+       9	RUN pip install --no-cache poetry
+      10	
+      11	WORKDIR /app
+      12	RUN mkdir -p data
+      13	COPY pyproject.toml README.md entrypoint.sh ./
+      14	RUN chmod +x entrypoint.sh
       15	
-      16	
-      17	RUN poetry lock \
-      18	&& poetry config virtualenvs.create false \
-      19	&& poetry install --no-root --no-interaction --no-ansi --with dev
+      16	RUN poetry lock \
+      17	&& poetry config virtualenvs.create false \
+      18	&& poetry install --no-root --no-interaction --no-ansi --with dev \
+      19	&& apk del .build-deps 
       20	
       21	EXPOSE 8000
       22	
-      23	# CMD ["tail", "-f", "/dev/null"]
-      24	CMD ["poetry", "run", "firewall-agent"]
+      23	CMD ["./entrypoint.sh"]
 
 ------------------------------ Dockerfile.prod ------------------------------
        1	# Dockerfile.prod
        2	FROM python:3.12-alpine
        3	
-       4	RUN apk add --no-cache \
-       5	      bash \
-       6	      musl-dev \
-       7	      libffi-dev \
-       8	      openssl-dev
-       9	
-      10	RUN pip install --no-cache poetry
-      11	
-      12	WORKDIR /app
-      13	
-      14	RUN mkdir -p data
-      15	
-      16	COPY firewall_agent/ ./firewall_agent/
-      17	COPY pyproject.toml README.md ./
+       4	RUN apk add --no-cache --virtual .build-deps \
+       5	      musl-dev \
+       6	      libffi-dev \
+       7	      openssl-dev
+       8	
+       9	RUN pip install --no-cache poetry
+      10	
+      11	WORKDIR /app
+      12	
+      13	RUN mkdir -p data
+      14	
+      15	COPY firewall_agent/ ./firewall_agent/
+      16	COPY pyproject.toml README.md entrypoint.sh ./
+      17	RUN chmod +x entrypoint.sh
       18	
       19	RUN poetry lock \
       20	&& poetry config virtualenvs.create false \
-      21	&& poetry install --no-interaction --no-ansi
-      22	
-      23	EXPOSE 8000
-      24	
-      25	CMD ["poetry", "run", "firewall-agent"]
+      21	&& poetry install --no-interaction --no-ansi \
+      22	&& apk del .build-deps 
+      23	
+      24	EXPOSE 8000
+      25	
+      26	CMD ["./entrypoint.sh"]
+
+------------------------------ .dockerignore ------------------------------
+       1	__pycache__/
+       2	*.py[cod]
+       3	*.pyo
+
+------------------------------ entrypoint.sh ------------------------------
+       1	#!/bin/sh
+       2	
+       3	poetry run firewall-agent init &&
+       4	poetry run firewall-agent serve
 
 ------------------------------ .env ------------------------------
        1	PREFIX=Biforch_
        2	API_KEY=7beKiNep5x7bS8G4Wjqb1G3Sk/6uMs+yH1J9p58cGJSUOf5zGW8qloEcfT4AqR9YMMGASP3Sn0l5Y7gc
        3	API_SECRET=S8kU5NcxtFkBuAl2PcNv8C+luxsg1CaukIT/uQGU1VGMhf4b0C0ticcRZrsRcDfJSQ7T7ZEghkdpy8E/
-       4	BIFORCH_TOKEN='SLDKj'
-       5	BIFORCH_UUID='7b6cd99d-0823-41a0-a218-080654771af9'
-       6	REMOTE_URL=http://192.168.87.1
-       7	CORE_URL=http://192.168.87.10:8001
-       8	AGENT_URL=http://192.168.87.10:8000
-       9	AGENT_NAME=opnsense
-      10	TIMEOUT=15
-      11	PORT=8000
-      12	RELOAD=true
+       4	REMOTE_URL=http://192.168.87.1
+       5	CORE_URL=http://192.168.87.10:8001
+       6	AGENT_URL=http://192.168.87.10:8000
+       7	AGENT_NAME=opnsense
+       8	TIMEOUT=15
+       9	PORT=8000
+      10	RELOAD=true
 
 ------------------------------ firewall_agent/api.py ------------------------------
        1	"""FastAPI entry‑point – contains *only* HTTP concerns."""
@@ -829,136 +793,137 @@
      131	    (which runs background syncs, etc.).
      132	    """
      133	    import uvicorn
-     134	    from .api import app as api_app
-     135	
-     136	    logging.basicConfig(
-     137	        level=logging.INFO,
-     138	        format="%(levelname)s: %(message)s"
-     139	    )
-     140	    uvicorn.run(
-     141	        api_app,
-     142	        host=settings.INTERNAL_HOST,
-     143	        port=settings.INTERNAL_PORT,
-     144	        reload=settings.RELOAD
-     145	    )
+     134	
+     135	    logging.basicConfig(
+     136	        level=logging.INFO,
+     137	        format="%(levelname)s: %(message)s"
+     138	    )
+     139	    uvicorn.run(
+     140	        f"{__package__}.api:app",
+     141	        host=settings.INTERNAL_HOST,
+     142	        port=settings.INTERNAL_PORT,
+     143	        reload=settings.RELOAD,
+     144	    )
+     145	
      146	
-     147	
-     148	if __name__ == "__main__":
-     149	    app()
+     147	if __name__ == "__main__":
+     148	    app()
 
 ------------------------------ firewall_agent/config.py ------------------------------
-       1	"""Central runtime configuration for Firewall Agent, loaded from environment variables.
-       2	
-       3	Uses **pydantic-settings** for strong validation – fails fast on startup.
-       4	Includes both API (OPNsense/Core) and server (Uvicorn) settings.
-       5	"""
-       6	from __future__ import annotations
-       7	
-       8	import sys
-       9	from pathlib import Path
-      10	from typing import Dict
-      11	from uuid import UUID
-      12	
-      13	from pydantic import AnyHttpUrl, ValidationError, Field, field_validator
-      14	from pydantic_settings import BaseSettings
-      15	
-      16	
-      17	class Settings(BaseSettings):
-      18	    # ----------------------- essential paths / URLs ------------------------
-      19	    CORE_URL: AnyHttpUrl             # e.g. "http://core.example.com:8001/"
-      20	    REMOTE_URL: AnyHttpUrl           # OPNsense base URL
-      21	    AGENT_URL: AnyHttpUrl            # e.g. "http://agent.example.com:8000/"  
+       1	# firewall_agent/config.py
+       2	"""
+       3	Central runtime configuration for Biforch Firewall Agent.
+       4	
+       5	- Loads settings from environment variables via pydantic-settings
+       6	- Validates values on startup (fails fast)
+       7	- Includes both API (OPNsense/Core) and server (Uvicorn) parameters
+       8	"""
+       9	from __future__ import annotations
+      10	
+      11	import sys
+      12	from pathlib import Path
+      13	from typing import Dict
+      14	
+      15	from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+      16	from pydantic_settings import BaseSettings
+      17	
+      18	
+      19	class Settings(BaseSettings):
+      20	    """
+      21	    Application settings loaded from environment.
       22	
-      23	    # ----------------------- identification / auth ------------------------
-      24	    API_KEY: str                     # API key for OPNsense
-      25	    API_SECRET: str                  # API secret for OPNsense
-      26	    PREFIX: str = Field(
-      27	        default="Biforch_",
-      28	        description="Alias prefix on OPNsense",
-      29	    )
-      30	    AGENT_NAME: str
-      31	    CALLBACK_PATH: str = Field(
-      32	        default="/registrations",
-      33	        description="Path for Core's callback",
-      34	    )
-      35	
-      36	    # ----------------------- runtime behaviour ----------------------------
-      37	    TIMEOUT: int = Field(
-      38	        default=10,
-      39	        description="Outbound HTTP timeout, in seconds",
-      40	    )
-      41	    DB_PATH: Path = Field(
-      42	        default=Path("data/firewall.db"),
-      43	        description="Path to local SQLite database file",
-      44	    )
-      45	
-      46	    # ----------------------- server settings ------------------------------
-      47	    INTERNAL_HOST: str = Field(
-      48	        default="0.0.0.0",
-      49	        description="Uvicorn server host",
-      50	    )
-      51	    INTERNAL_PORT: int = Field(
-      52	        default=8000,
-      53	        description="Uvicorn server port",
-      54	    )
-      55	    RELOAD: bool = Field(
-      56	        default=False,
-      57	        description="Enable Uvicorn auto-reload in development",
-      58	    )
-      59	
-      60	    # ----------------------- internal mappings ----------------------------
-      61	    ACTION_MAP: Dict[str, str] = {
-      62	        "pass": "pass",
-      63	        "block": "block",
-      64	        "reject": "block",
-      65	    }
-      66	
-      67	    model_config = {
-      68	        "extra": "ignore",
-      69	    }
-      70	
-      71	    # ---------------------------- validators ------------------------------
-      72	    @field_validator("TIMEOUT", mode="before")
-      73	    @classmethod
-      74	    def _timeout_positive(cls, v: int | str) -> int:
-      75	        value = int(v)
-      76	        if value <= 0:
-      77	            raise ValueError("TIMEOUT must be positive")
-      78	        return value
-      79	
-      80	    @field_validator("INTERNAL_PORT", mode="before")
+      23	    Attributes:
+      24	        CORE_URL: URL of Biforch Core service
+      25	        REMOTE_URL: Base URL of OPNsense firewall
+      26	        AGENT_URL: Callback/API URL of this agent
+      27	
+      28	        API_KEY: OPNsense API key
+      29	        API_SECRET: OPNsense API secret
+      30	        PREFIX: Prefix for firewall aliases
+      31	        AGENT_NAME: Logical name of this agent
+      32	        CALLBACK_PATH: Path to receive Core callbacks
+      33	
+      34	        TIMEOUT: HTTP request timeout (seconds)
+      35	        DB_PATH: Path to SQLite database file
+      36	
+      37	        INTERNAL_HOST: Uvicorn bind host
+      38	        INTERNAL_PORT: Uvicorn bind port
+      39	        RELOAD: Enable Uvicorn auto-reload in dev
+      40	
+      41	        ACTION_MAP: Map firewall actions to Core contract
+      42	    """
+      43	    # External service URLs
+      44	    CORE_URL: AnyHttpUrl
+      45	    REMOTE_URL: AnyHttpUrl
+      46	    AGENT_URL: AnyHttpUrl
+      47	
+      48	    # Firewall authentication
+      49	    API_KEY: str
+      50	    API_SECRET: str
+      51	
+      52	    # Alias configuration
+      53	    PREFIX: str = Field("Biforch_", description="Prefix for OPNsense aliases")
+      54	    AGENT_NAME: str
+      55	    CALLBACK_PATH: str = Field("/registrations", description="Core callback endpoint path")
+      56	
+      57	    # Runtime behavior
+      58	    TIMEOUT: int = Field(10, description="Outbound HTTP timeout in seconds")
+      59	    DB_PATH: Path = Field(Path("data/firewall.db"), description="Local SQLite DB file path")
+      60	
+      61	    # Server settings
+      62	    INTERNAL_HOST: str = Field("0.0.0.0", description="Uvicorn server host")
+      63	    INTERNAL_PORT: int = Field(8000, description="Uvicorn server port")
+      64	    RELOAD: bool = Field(False, description="Enable Uvicorn auto-reload in development")
+      65	
+      66	    # Internal mappings
+      67	    ACTION_MAP: Dict[str, str] = Field(
+      68	        default_factory=lambda: {"pass": "pass", "block": "block", "reject": "block"},
+      69	        description="Map OPNsense actions to Core contract"
+      70	    )
+      71	
+      72	    # Pydantic settings
+      73	    model_config = {
+      74	        "extra": "ignore",
+      75	        "env_file": ".env",
+      76	        "case_sensitive": True,
+      77	    }
+      78	
+      79	    # Validators
+      80	    @field_validator("TIMEOUT", mode="before")
       81	    @classmethod
-      82	    def _validate_port(cls, v: int | str) -> int:
+      82	    def _ensure_positive_timeout(cls, v: int | str) -> int:
       83	        value = int(v)
-      84	        if not (1 <= value <= 65535):
-      85	            raise ValueError("INTERNAL_PORT must be between 1 and 65535")
+      84	        if value <= 0:
+      85	            raise ValueError("TIMEOUT must be a positive integer")
       86	        return value
       87	
-      88	    @field_validator("RELOAD", mode="before")
+      88	    @field_validator("INTERNAL_PORT", mode="before")
       89	    @classmethod
-      90	    def _validate_reload(cls, v: bool | str) -> bool:
-      91	        if isinstance(v, str):
-      92	            val = v.lower()
-      93	            if val in ("1", "true", "yes"):
-      94	                return True
-      95	            if val in ("0", "false", "no"):
-      96	                return False
-      97	            raise ValueError("RELOAD must be a boolean (true/false)")
-      98	        return bool(v)
-      99	
-     100	
-     101	settings = Settings()
-     102	
-     103	# ---------------------------------------------------------------------------
-     104	# Debug helper – ``python -m firewall_agent.config`` pretty-prints the loaded settings
-     105	# ---------------------------------------------------------------------------
-     106	if __name__ == "__main__":  # pragma: no cover
-     107	    try:
-     108	        print(settings.model_dump_json(indent=2))
-     109	    except ValidationError as exc:
-     110	        print("🚨 Configuration error:", file=sys.stderr)
-     111	        print(exc, file=sys.stderr)
-     112	        sys.exit(1)
+      90	    def _ensure_valid_port(cls, v: int | str) -> int:
+      91	        port = int(v)
+      92	        if not (1 <= port <= 65535):
+      93	            raise ValueError("INTERNAL_PORT must be between 1 and 65535")
+      94	        return port
+      95	
+      96	    @field_validator("RELOAD", mode="before")
+      97	    @classmethod
+      98	    def _parse_reload_flag(cls, v: bool | str) -> bool:
+      99	        if isinstance(v, str):
+     100	            val = v.lower()
+     101	            if val in ("true", "1", "yes"):
+     102	                return True
+     103	            if val in ("false", "0", "no"):
+     104	                return False
+     105	            raise ValueError("RELOAD must be a boolean value")
+     106	        return bool(v)
+     107	
+     108	
+     109	# Instantiate settings (fails on validation error)
+     110	try:
+     111	    settings = Settings()
+     112	except ValidationError as exc:
+     113	    print("🚨 Configuration error:\n", exc, file=sys.stderr)
+     114	    sys.exit(1)
 
 ------------------------------ firewall_agent/database.py ------------------------------
        1	"""SQLAlchemy engine / session boilerplate."""
@@ -1255,7 +1220,7 @@
       32	
       33	# ---------- CLI entry ----------
       34	[tool.poetry.scripts]
-      35	firewall-agent = "firewall_agent.api:run"
+      35	firewall-agent = "firewall_agent.cli:app"
       36	
       37	# ---------- Build backend ----------
       38	[build-system]

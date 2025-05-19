@@ -1,7 +1,7 @@
 # docker-compose.prod.yml
 
 services:
-  firewall-agent:
+  reverse-proxy-agent:
     build:
       context: .
       dockerfile: Dockerfile.prod

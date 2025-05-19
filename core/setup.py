@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # setup.py
 
+import time
 import requests
 import sys
 import json
@@ -47,6 +48,7 @@ def main():
         for item in pending_items:
             result = approve_request(item["id"])
             approvals.append(result)
+            time.sleep(4)
         # Output all approvals
         print(json.dumps(approvals, indent=2))
     except requests.HTTPError as e:

@@ -29,10 +29,10 @@ from .services.sync import sync_firewall
 async def lifespan(_: FastAPI):
     """Background thread monitors firewall every 10 s."""
     stop = threading.Event()
-
+    db: Session = next(get_db())  # type: ignore[arg-type]
     def _worker():
         while not stop.is_set():
-            sync_firewall()
+            sync_firewall(db)
             time.sleep(10)
 
     thread = threading.Thread(target=_worker, daemon=True)

@@ -1,5 +1,10 @@
 ============================== PROJECT TREE ==============================
 .
+├── docker-compose.dev.yml
+├── docker-compose.prod.yml
+├── Dockerfile.dev
+├── Dockerfile.prod
+├── entrypoint.sh
 ├── .env
 ├── pyproject.toml
 ├── README.md
@@ -18,9 +23,8 @@
 │   ├── __init__.py
 │   ├── models.py
 │   ├── schemas.py
-│   ├── services
-│   │   └── sync.py
-│   └── utils.py
+│   └── services
+│       └── sync.py
 └── tests
     ├── conftest.py
     ├── test_api_invalid_inputs.py
@@ -32,24 +36,112 @@
     ├── test_service_sync.py
     └── test_utils.py
 
-6 directories, 26 files
+6 directories, 30 files
 
 ============================ FILE CONTENTS ==============================
+------------------------------ docker-compose.dev.yml ------------------------------
+       1	# docker-compose.dev.yml
+       2	services:
+       3	  reverse-proxy-agent:
+       4	    build:
+       5	      context: .
+       6	      dockerfile: Dockerfile.dev
+       7	    volumes:
+       8	      - ./reverse_proxy_agent:/app/reverse_proxy_agent
+       9	    env_file:
+      10	      - .env
+      11	    ports:
+      12	      - "$PORT:8000"
+
+------------------------------ docker-compose.prod.yml ------------------------------
+       1	# docker-compose.prod.yml
+       2	
+       3	services:
+       4	  reverse-proxy-agent:
+       5	    build:
+       6	      context: .
+       7	      dockerfile: Dockerfile.prod
+       8	    env_file:
+       9	      - .env
+      10	    ports:
+      11	      - "$PORT:8000"
+      12	    volumes:
+      13	      - ./data:/app/data
+      14	    restart: always
+
+------------------------------ Dockerfile.dev ------------------------------
+       1	# Dockerfile.dev
+       2	FROM python:3.12-alpine
+       3	
+       4	RUN apk add --no-cache --virtual .build-deps \
+       5	      musl-dev \
+       6	      libffi-dev \
+       7	      openssl-dev
+       8	
+       9	RUN pip install --no-cache poetry
+      10	
+      11	WORKDIR /app
+      12	RUN mkdir -p data
+      13	COPY pyproject.toml README.md entrypoint.sh ./
+      14	RUN chmod +x entrypoint.sh
+      15	
+      16	RUN poetry lock \
+      17	&& poetry config virtualenvs.create false \
+      18	&& poetry install --no-root --no-interaction --no-ansi --with dev \
+      19	&& apk del .build-deps 
+      20	
+      21	EXPOSE 8000
+      22	
+      23	# CMD ["./entrypoint.sh"]
+      24	CMD ["tail", "-f", "/dev/null"]
+
+------------------------------ Dockerfile.prod ------------------------------
+       1	# Dockerfile.prod
+       2	FROM python:3.12-alpine
+       3	
+       4	RUN apk add --no-cache --virtual .build-deps \
+       5	      musl-dev \
+       6	      libffi-dev \
+       7	      openssl-dev
+       8	
+       9	RUN pip install --no-cache poetry
+      10	
+      11	WORKDIR /app
+      12	
+      13	RUN mkdir -p data
+      14	
+      15	COPY reverse_proxy_agent/ ./reverse_proxy_agent/
+      16	COPY pyproject.toml README.md entrypoint.sh ./
+      17	RUN chmod +x entrypoint.sh
+      18	
+      19	RUN poetry lock \
+      20	&& poetry config virtualenvs.create false \
+      21	&& poetry install --no-interaction --no-ansi \
+      22	&& apk del .build-deps 
+      23	
+      24	EXPOSE 8000
+      25	
+      26	CMD ["./entrypoint.sh"]
+
+------------------------------ entrypoint.sh ------------------------------
+       1	#!/bin/sh
+       2	
+       3	poetry run reverse-proxy-agent init &&
+       4	poetry run reverse-proxy-agent serve
+
 ------------------------------ .env ------------------------------
        1	CONFIG_DIR='../nginx/auto.d/'
        2	DB_PATH='reverse_proxy.db'
        3	CORE_URL='http://192.168.87.10:8001'
-       4	BIFORCH_TOKEN='0e9c614e9afa7c8b3ce1f2a1f1325b6e'
-       5	BIFORCH_UUID='ae82a306-1683-4bb7-b053-7bc88136e0c8'
-       6	AGENT_NAME='nginx'
-       7	AGENT_URL='http://192.168.87.10:8002'
-       8	PROXY_BACKEND=nginx
-       9	TIMEOUT=5
-      10	INTERNAL_HOST='0.0.0.0'
-      11	INTERNAL_PORT='8002'
-      12	REVERSE_PROXY_IP='192.168.87.10'
-      13	REVERSE_PROXY_PORTS=80,443
-      14	RELOAD=True
+       4	AGENT_NAME='nginx'
+       5	AGENT_URL='http://192.168.87.10:8002'
+       6	PROXY_BACKEND=nginx
+       7	TIMEOUT=5
+       8	INTERNAL_HOST='0.0.0.0'
+       9	INTERNAL_PORT='8002'
+      10	REVERSE_PROXY_IP='192.168.87.10'
+      11	REVERSE_PROXY_PORTS=[80,443]
+      12	RELOAD=True
 
 ------------------------------ pyproject.toml ------------------------------
        1	[tool.poetry]
@@ -73,26 +165,27 @@
       19	python-dotenv     = "^1.0"
       20	pydantic          = "^2.7"
       21	pydantic-settings = "^2.3"
-      22	
-      23	# ---------- Dev dependencies ----------
-      24	[tool.poetry.group.dev.dependencies]
-      25	alembic        = "^1.13.1"
-      26	pytest         = "^8.2"
-      27	pytest-cov     = "^5.0"
-      28	pytest-asyncio = "^0.23"
-      29	httpx          = "^0.27"
-      30	pytest-mock    = "^3.12"
-      31	factory-boy    = "^3.3"
-      32	freezegun      = "^1.4"
-      33	
-      34	# ---------- CLI entry ----------
-      35	[tool.poetry.scripts]
-      36	reverse-proxy-agent = "reverse_proxy_agent.api:run"
-      37	
-      38	# ---------- Build backend ----------
-      39	[build-system]
-      40	requires      = ["poetry-core>=1.8.0"]
-      41	build-backend = "poetry.core.masonry.api"
+      22	typer = { version = "^0.9.0", extras = ["all"] }
+      23	
+      24	# ---------- Dev dependencies ----------
+      25	[tool.poetry.group.dev.dependencies]
+      26	alembic        = "^1.13.1"
+      27	pytest         = "^8.2"
+      28	pytest-cov     = "^5.0"
+      29	pytest-asyncio = "^0.23"
+      30	httpx          = "^0.27"
+      31	pytest-mock    = "^3.12"
+      32	factory-boy    = "^3.3"
+      33	freezegun      = "^1.4"
+      34	
+      35	# ---------- CLI entry ----------
+      36	[tool.poetry.scripts]
+      37	reverse-proxy-agent = "reverse_proxy_agent.cli:app"
+      38	
+      39	# ---------- Build backend ----------
+      40	[build-system]
+      41	requires      = ["poetry-core>=1.8.0"]
+      42	build-backend = "poetry.core.masonry.api"
 
 ------------------------------ README.md ------------------------------
        1	# Biforch Reverse-Proxy Agent
@@ -199,77 +292,82 @@
       12	from .config import settings
       13	from .models import RuleDB, ServiceDB
       14	from .schemas import RuleIn, RuleOut
-      15	from .dependencies import get_db, get_backend, get_core_client
+      15	from .dependencies import get_db
       16	from .services.sync import sync_to_backend, announce_new_service
       17	
       18	# ------------------------------------------------------------------------
       19	# Lifespan – at startup discover *.conf & register missing services
       20	# ------------------------------------------------------------------------
       21	
-      22	@asynccontextmanager
-      23	async def lifespan(_: FastAPI):
-      24	    Path(settings.CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-      25	    db: Session = next(get_db())  # type: ignore[arg-type]
-      26	    try:
-      27	        for cfg in Path(settings.CONFIG_DIR).glob("*.conf"):
-      28	            svc = cfg.stem
-      29	            if not db.query(ServiceDB).filter_by(name=svc).first():
-      30	                announce_new_service(svc)
-      31	        db.commit()
-      32	    finally:
-      33	        db.close()
-      34	    yield
-      35	
-      36	# ------------------------------------------------------------------------
-      37	# FastAPI app
-      38	# ------------------------------------------------------------------------
-      39	
-      40	app = FastAPI(title="Reverse‑Proxy Agent", lifespan=lifespan)
-      41	
+      22	
+      23	@asynccontextmanager
+      24	async def lifespan(_: FastAPI):
+      25	    Path(settings.CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+      26	    db: Session = next(get_db())  
+      27	    try:
+      28	        for cfg in Path(settings.CONFIG_DIR).glob("*.conf"):
+      29	            svc = cfg.stem
+      30	            if not db.query(ServiceDB).filter_by(name=svc).first():
+      31	                announce_new_service(svc, db)
+      32	        db.commit()
+      33	    finally:
+      34	        db.close()
+      35	    yield
+      36	
+      37	# ------------------------------------------------------------------------
+      38	# FastAPI app
+      39	# ------------------------------------------------------------------------
+      40	
+      41	app = FastAPI(title="Reverse‑Proxy Agent", lifespan=lifespan)
       42	
-      43	# ------------------------------- routes ----------------------------------
-      44	
-      45	@app.post("/rules/{service_id}", response_model=RuleOut)
-      46	def create_rule(service_id: int, body: RuleIn, db: Session = Depends(get_db)) -> RuleOut:
-      47	    svc = db.get(ServiceDB, service_id)
-      48	    if svc is None:
-      49	        raise HTTPException(404, "service not registered")
-      50	
+      43	
+      44	# ------------------------------- routes ----------------------------------
+      45	
+      46	@app.post("/rules/{service_id}", response_model=RuleOut)
+      47	def create_rule(service_id: int, body: RuleIn, db: Session = Depends(get_db)) -> RuleOut:
+      48	    svc = db.get(ServiceDB, service_id)
+      49	    if svc is None:
+      50	        raise HTTPException(404, "service not registered")
       51	    rule = RuleDB(service_name=svc.name, action=body.action, ip=str(body.ip))
       52	    db.add(rule)
-      53	    db.commit(); db.refresh(rule)
-      54	
-      55	    sync_to_backend()
+      53	    db.commit()
+      54	    db.refresh(rule)
+      55	    sync_to_backend(db)
       56	    return RuleOut(id=rule.id, service_id=service_id, action=rule.action, ip=rule.ip)
       57	
       58	
       59	@app.put("/rules/{service_id}", response_model=List[RuleOut])
       60	def replace_rules(service_id: int, body: RuleIn, db: Session = Depends(get_db)) -> List[RuleOut]:
-      61	    svc = db.get(ServiceDB, service_id)
-      62	    if svc is None:
-      63	        raise HTTPException(404, "service not registered")
-      64	
-      65	    db.query(RuleDB).filter_by(service_name=svc.name).delete()
-      66	    rule = RuleDB(service_name=svc.name, action=body.action, ip=str(body.ip))
-      67	    db.add(rule); db.commit(); db.refresh(rule)
-      68	
-      69	    sync_to_backend()
-      70	    return [RuleOut(id=rule.id, service_id=service_id, action=rule.action, ip=rule.ip)]
+      61	    """Replace all rules for the given service."""
+      62	    svc = db.get(ServiceDB, service_id)
+      63	    if svc is None:
+      64	        raise HTTPException(status_code=404, detail="Service not registered")
+      65	
+      66	    db.query(RuleDB).filter_by(service_name=svc.name).delete()
+      67	    rule = RuleDB(service_name=svc.name, action=body.action, ip=str(body.ip))
+      68	    db.add(rule)
+      69	    db.commit()
+      70	    db.refresh(rule)
       71	
-      72	
-      73	@app.delete("/rules/{service_id}")
-      74	def delete_rules(service_id: int, db: Session = Depends(get_db)) -> dict[str, int]:
-      75	    svc = db.get(ServiceDB, service_id)
-      76	    if svc is None:
-      77	        raise HTTPException(404, "service not found")
-      78	
-      79	    deleted = db.query(RuleDB).filter_by(service_name=svc.name).delete()
-      80	    if deleted == 0:
-      81	        raise HTTPException(404, "no rules to delete")
-      82	
-      83	    db.commit()
-      84	    sync_to_backend()
-      85	    return {"deleted": deleted}
+      72	    sync_to_backend(db)
+      73	
+      74	    return [RuleOut(id=rule.id, service_id=service_id, action=rule.action, ip=rule.ip)]
+      75	
+      76	
+      77	@app.delete("/rules/{service_id}")
+      78	def delete_rules(service_id: int, db: Session = Depends(get_db)) -> dict[str, int]:
+      79	    """Delete all rules for the given service."""
+      80	    svc = db.get(ServiceDB, service_id)
+      81	    if svc is None:
+      82	        raise HTTPException(status_code=404, detail="Service not found")
+      83	
+      84	    deleted = db.query(RuleDB).filter_by(service_name=svc.name).delete()
+      85	    if deleted == 0:
+      86	        raise HTTPException(status_code=404, detail="No rules to delete")
+      87	
+      88	    db.commit()
+      89	    sync_to_backend(db)
+      90	    return {"deleted": deleted}
 
 ------------------------------ reverse_proxy_agent/backends/base.py ------------------------------
        1	"""Common backend interface – every backend must implement ProxyBackend."""
@@ -610,128 +708,128 @@
       12	
       13	import typer
       14	import uvicorn
-      15	from fastapi import FastAPI, HTTPException
+      15	from fastapi import FastAPI, HTTPException, Depends
       16	from pydantic import BaseModel
       17	from typing import Dict, Literal, Optional
       18	
       19	from .config import settings
       20	from .clients.core import CoreClient
-      21	from .database import SessionLocal
+      21	from .database import SessionLocal  # This is where the session is created
       22	from .models import AgentCredentials
-      23	
-      24	app = typer.Typer(help="Biforch Reverse Proxy Agent CLI")
-      25	
+      23	from .dependencies import get_db
+      24	
+      25	app = typer.Typer(help="Biforch Reverse Proxy Agent CLI")
       26	
-      27	class RegistrationCallback(BaseModel):
-      28	    """
-      29	    Model for Core's callback payload.
-      30	    Core will POST {"secret": "...", "action": "approve|reject", "uuid": "...", "token": "..."}
-      31	    """
-      32	    secret: str
-      33	    action: Literal["approve", "reject"]
-      34	    uuid: Optional[str]
-      35	    token: Optional[str]
-      36	
+      27	
+      28	class RegistrationCallback(BaseModel):
+      29	    """
+      30	    Model for Core's callback payload.
+      31	    Core will POST {"secret": "...", "action": "approve|reject", "uuid": "...", "token": "..."}.
+      32	    """
+      33	    secret: str
+      34	    action: Literal["approve", "reject"]
+      35	    uuid: Optional[str]
+      36	    token: Optional[str]
       37	
-      38	@app.command()
-      39	def init():
-      40	    """
-      41	    1) If already registered, report existing credentials and exit.
-      42	    2) Launch temporary FastAPI server to receive Core's callback.
-      43	    3) Enqueue a reverse proxy registration request to Core (using settings.CORE_URL).
-      44	    4) Block until Core calls back, then store credentials & exit.
-      45	    """
-      46	    # Check for existing credentials
-      47	    db = SessionLocal()
-      48	    existing = db.query(AgentCredentials).first()
-      49	    if existing:
-      50	        typer.secho(
-      51	            f"🔒 Already registered:\n  UUID: {existing.uuid}\n  Token: {existing.token}",
-      52	            fg=typer.colors.YELLOW
-      53	        )
-      54	        db.close()
-      55	        return
-      56	
-      57	    callback_data: Dict[str, str] = {}
-      58	    event = threading.Event()
-      59	
-      60	    # Build temporary FastAPI app for callback
-      61	    server_app = FastAPI()
-      62	
-      63	    @server_app.post(settings.CALLBACK_PATH)
-      64	    async def receive_callback(body: RegistrationCallback):
-      65	        # Validate secret
-      66	        if body.secret != callback_data.get("secret"):
-      67	            raise HTTPException(400, "Invalid secret")
-      68	        callback_data["action"] = body.action
-      69	        # On approval, capture uuid and token
-      70	        if body.action == "approve":
-      71	            callback_data["uuid"] = body.uuid or ""
-      72	            callback_data["token"] = body.token or ""
-      73	        # Signal shutdown and notifying main thread
-      74	        server.should_exit = True
-      75	        event.set()
-      76	        return {"status": "received"}
-      77	
-      78	    # Start Uvicorn server in background
-      79	    config = uvicorn.Config(
-      80	        server_app,
-      81	        host=settings.INTERNAL_HOST,
-      82	        port=settings.INTERNAL_PORT,
-      83	        log_level="info",
-      84	        lifespan="on"
-      85	    )
-      86	    server = uvicorn.Server(config)
-      87	    thread = threading.Thread(target=server.run, daemon=True)
-      88	    thread.start()
-      89	    typer.echo(
-      90	        f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
-      91	    )
-      92	
-      93	    # Enqueue registration with Core
-      94	    client = CoreClient(base_url=str(settings.CORE_URL))
-      95	    pending = client.register_reverse_proxy(
-      96	        name=settings.AGENT_NAME,
-      97	        api_url=str(settings.AGENT_URL),
-      98	        ip,
-      99	        ports=[80, 443]
-     100	    )
-     101	    callback_data["secret"] = pending.secret
-     102	    typer.echo(
-     103	        f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
-     104	    )
-     105	
-     106	    # Block until callback arrives
-     107	    event.wait()
-     108	
-     109	    # Shutdown server thread
-     110	    thread.join(timeout=1)
-     111	
-     112	    # Report and store result
-     113	    action = callback_data.get("action")
-     114	    if action == "approve":
-     115	        uuid_str = callback_data.get("uuid", "")
-     116	        token_str = callback_data.get("token", "")
-     117	        # Persist credentials in DB
-     118	        db.add(AgentCredentials(uuid=uuid_str, token=token_str))
-     119	        db.commit()
-     120	        db.close()
-     121	        typer.secho(
-     122	            f"✅ Registration approved!\n  UUID: {uuid_str}\n  Token: {token_str}",
-     123	            fg=typer.colors.GREEN
-     124	        )
-     125	    else:
-     126	        typer.secho("❌ Registration was rejected by Core", fg=typer.colors.RED)
-     127	
-     128	
-     129	@app.command()
-     130	def serve():
-     131	    """
-     132	    Start the Biforch Reverse Proxy Agent API server
-     133	    (which runs background syncs, etc.).
-     134	    """
-     135	    import uvicorn
-     136	
+      38	
+      39	@app.command()
+      40	def init():
+      41	    """
+      42	    1) If already registered, report existing credentials and exit.
+      43	    2) Launch temporary FastAPI server to receive Core's callback.
+      44	    3) Enqueue a reverse proxy registration request to Core (using settings.CORE_URL).
+      45	    4) Block until Core calls back, then store credentials & exit.
+      46	    """
+      47	    db = SessionLocal()  # This is where we manually create the session
+      48	    try:
+      49	        # Check for existing credentials
+      50	        existing = db.query(AgentCredentials).first()
+      51	        if existing:
+      52	            typer.secho(
+      53	                f"🔒 Already registered:\n  UUID: {existing.uuid}\n  Token: {existing.token}",
+      54	                fg=typer.colors.YELLOW
+      55	            )
+      56	            return
+      57	
+      58	        callback_data: Dict[str, str] = {}
+      59	        event = threading.Event()
+      60	
+      61	        # Build temporary FastAPI app for callback
+      62	        server_app = FastAPI()
+      63	
+      64	        @server_app.post(settings.CALLBACK_PATH)
+      65	        async def receive_callback(body: RegistrationCallback):
+      66	            # Validate secret
+      67	            if body.secret != callback_data.get("secret"):
+      68	                raise HTTPException(400, "Invalid secret")
+      69	            callback_data["action"] = body.action
+      70	            # On approval, capture uuid and token
+      71	            if body.action == "approve":
+      72	                callback_data["uuid"] = body.uuid or ""
+      73	                callback_data["token"] = body.token or ""
+      74	            # Signal shutdown and notifying main thread
+      75	            server.should_exit = True
+      76	            event.set()
+      77	            return {"status": "received"}
+      78	
+      79	        # Start Uvicorn server in background
+      80	        config = uvicorn.Config(
+      81	            server_app,
+      82	            host=settings.INTERNAL_HOST,
+      83	            port=settings.INTERNAL_PORT,
+      84	            log_level="info",
+      85	            lifespan="on"
+      86	        )
+      87	        server = uvicorn.Server(config)
+      88	        thread = threading.Thread(target=server.run, daemon=True)
+      89	        thread.start()
+      90	        typer.echo(
+      91	            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
+      92	        )
+      93	
+      94	        # Enqueue registration with Core
+      95	        client = CoreClient(base_url=str(settings.CORE_URL))
+      96	        pending = client.register_reverse_proxy(
+      97	            name=settings.AGENT_NAME,
+      98	            api_url=str(settings.AGENT_URL),
+      99	            ip=settings.REVERSE_PROXY_IP,
+     100	            ports=settings.REVERSE_PROXY_PORTS,
+     101	        )
+     102	        callback_data["secret"] = pending.secret
+     103	        typer.echo(
+     104	            f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
+     105	        )
+     106	
+     107	        # Block until callback arrives
+     108	        event.wait()
+     109	
+     110	        # Shutdown server thread
+     111	        thread.join(timeout=1)
+     112	
+     113	        # Report and store result
+     114	        action = callback_data.get("action")
+     115	        if action == "approve":
+     116	            uuid_str = callback_data.get("uuid", "")
+     117	            token_str = callback_data.get("token", "")
+     118	            # Persist credentials in DB
+     119	            db.add(AgentCredentials(uuid=uuid_str, token=token_str))
+     120	            db.commit()
+     121	            typer.secho(
+     122	                f"✅ Registration approved!\n  UUID: {uuid_str}\n  Token: {token_str}",
+     123	                fg=typer.colors.GREEN
+     124	            )
+     125	        else:
+     126	            typer.secho("❌ Registration was rejected by Core", fg=typer.colors.RED)
+     127	    finally:
+     128	        db.close()  # Close the session after usage
+     129	
+     130	
+     131	@app.command()
+     132	def serve():
+     133	    """
+     134	    Start the Biforch Reverse Proxy Agent API server
+     135	    (which runs background syncs, etc.).
+     136	    """
      137	    logging.basicConfig(
      138	        level=logging.INFO,
      139	        format="%(levelname)s: %(message)s"
@@ -963,48 +1061,64 @@
        8	
        9	from typing import Generator
       10	
-      11	from fastapi import Depends  # exported for convenience elsewhere
-      12	from sqlalchemy.orm import Session
-      13	
-      14	from .database import SessionLocal
-      15	from .backends import backend as _backend
-      16	from .backends.base import ProxyBackend
-      17	from .clients.core import CoreClient
-      18	
-      19	# ---------------------------------------------------------------------------
-      20	# Database session dependency
-      21	# ---------------------------------------------------------------------------
-      22	
-      23	def get_db() -> Generator[Session, None, None]:
-      24	    """Yield a *request-scoped* SQLAlchemy session.
-      25	
-      26	    The explicit ``Generator`` return annotation keeps type-checkers such as
-      27	    *pylance* & *mypy* happy, and is what FastAPI expects
-      28	    for yield-based dependencies.
-      29	    """
-      30	    db = SessionLocal()
-      31	    try:
-      32	        yield db
-      33	    finally:
-      34	        db.close()
-      35	
-      36	
-      37	# ---------------------------------------------------------------------------
-      38	# Reverse-proxy backend dependency
+      11	from sqlalchemy.orm import Session
+      12	
+      13	from .database import SessionLocal
+      14	from .backends import backend as _backend
+      15	from .backends.base import ProxyBackend
+      16	from .clients.core import CoreClient
+      17	from .config import settings
+      18	from .models import AgentCredentials
+      19	
+      20	# ---------------------------------------------------------------------------
+      21	# Database session dependency
+      22	# ---------------------------------------------------------------------------
+      23	
+      24	
+      25	def get_db() -> Generator[Session, None, None]:
+      26	    """Yield a *request-scoped* SQLAlchemy session.
+      27	
+      28	    The explicit ``Generator`` return annotation keeps type-checkers such as
+      29	    *pylance* & *mypy* happy, and is what FastAPI expects
+      30	    for yield-based dependencies.
+      31	    """
+      32	    db = SessionLocal()
+      33	    try:
+      34	        yield db
+      35	    finally:
+      36	        db.close()
+      37	
+      38	
       39	# ---------------------------------------------------------------------------
-      40	
-      41	def get_backend() -> ProxyBackend:  # pragma: no cover – trivial wrapper
-      42	    """Return the singleton *backend* selected in settings (Nginx, Caddy …)."""
-      43	    return _backend
-      44	
-      45	
-      46	# ---------------------------------------------------------------------------
-      47	# Core service client dependency
+      40	# Reverse-proxy backend dependency
+      41	# ---------------------------------------------------------------------------
+      42	
+      43	def get_backend() -> ProxyBackend:  # pragma: no cover – trivial wrapper
+      44	    """Return the singleton *backend* selected in settings (Nginx, Caddy …)."""
+      45	    return _backend
+      46	
+      47	
       48	# ---------------------------------------------------------------------------
-      49	
-      50	def get_core_client() -> CoreClient:  # pragma: no cover
-      51	    """Create a *stateless* CoreClient for the requesting context."""
-      52	    return CoreClient()
+      49	# Core service client dependency
+      50	# ---------------------------------------------------------------------------
+      51	
+      52	def get_core_client(db: Session) -> CoreClient:
+      53	    """
+      54	    Create a CoreClient using the stored actor token from the database.
+      55	    Raises HTTPException if no token is available.
+      56	    """
+      57	    from fastapi import HTTPException
+      58	
+      59	    # Retrieve the agent's credentials from the local database
+      60	    cred = db.query(AgentCredentials).first()
+      61	    token = cred.token if cred else None
+      62	
+      63	    if not token:
+      64	        raise HTTPException(
+      65	            status_code=500, detail="Missing actor token: please register the agent first.")
+      66	
+      67	    # Initialize CoreClient with actor_token
+      68	    return CoreClient(str(settings.CORE_URL), actor_token=token)
 
 ------------------------------ reverse_proxy_agent/__init__.py ------------------------------
        1	# reverse_proxy_agent/__init__.py
@@ -1076,92 +1190,84 @@
       21	    ip: str
 
 ------------------------------ reverse_proxy_agent/services/sync.py ------------------------------
-       1	"""Business logic – sync DB rules 👉 backend snippets & Core registration."""
-       2	from __future__ import annotations
-       3	
-       4	import logging
-       5	from typing import Dict, List
-       6	
-       7	from sqlalchemy.orm import Session
-       8	
-       9	from ..models import RuleDB, ServiceDB
+       1	from __future__ import annotations
+       2	
+       3	import logging
+       4	from typing import Dict, List
+       5	
+       6	from sqlalchemy.orm import Session
+       7	
+       8	from ..clients import core
+       9	from ..models import AgentCredentials, RuleDB, ServiceDB
       10	from ..backends import backend
-      11	from ..dependencies import get_db, get_core_client
+      11	from ..dependencies import get_core_client
       12	
       13	
       14	# ------------------------- helper: collect rules --------------------------
       15	
       16	def _collect_rules(db: Session) -> Dict[str, List[str]]:
-      17	    grouped: Dict[str, List[str]] = {}
-      18	    rows = db.query(RuleDB).all()
-      19	    for r in rows:
-      20	        action = "allow" if r.action == "pass" else "deny"
-      21	        grouped.setdefault(r.service_name, []).append(f"{action} {r.ip};")
-      22	    return grouped
-      23	
-      24	
-      25	# ------------------------------- public API -------------------------------
-      26	
-      27	def sync_to_backend() -> None:
-      28	    """Full sync: write Nginx snippets then reload."""
-      29	    db: Session = next(get_db())  # type: ignore[arg-type]
-      30	    try:
-      31	        backend.apply_rules(_collect_rules(db))
-      32	    finally:
-      33	        db.close()
-      34	
-      35	
-      36	def announce_new_service(svc_name: str) -> None:
-      37	    """Let Core know we host a previously unseen *.conf service."""
-      38	    from ..config import settings
-      39	    db: Session = next(get_db())  # type: ignore[arg-type]
-      40	    core = get_core_client()
-      41	    try:
-      42	        svc = db.query(ServiceDB).filter_by(name=svc_name).first()
-      43	        if svc:
-      44	            return  # already known
-      45	        resp = core.create_service(svc_name, reverse_proxy_uuid=str(settings.BIFORCH_UUID))
-      46	        db.add(ServiceDB(id=resp["id"], name=svc_name, core_service_id=resp["id"]))
-      47	        db.commit()
-      48	        logging.info("📣 Registered service '%s' with Core (id=%s)", svc_name, resp["id"])
-      49	    except Exception as exc:  # noqa: BLE001
-      50	        logging.warning("Failed to register service %s: %s", svc_name, exc)
-      51	    finally:
-      52	        db.close()
-
------------------------------- reverse_proxy_agent/utils.py ------------------------------
-       1	"""Shared helpers – rule sync & Core registration."""
-       2	from __future__ import annotations
-       3	import logging
-       4	from typing import Dict, List
-       5	
-       6	import requests
-       7	from sqlalchemy.orm import Session
-       8	
-       9	from .config import settings
-      10	from .database import SessionLocal
-      11	from .models import RuleDB
-      12	from .backends import backend  # singleton backend instance
-      13	
-      14	# ------------------------------------------------------------------ rules --
-      15	def _collect_rules() -> Dict[str, List[str]]:
-      16	    """Pull all rules from DB and group by service."""
-      17	    db: Session = SessionLocal()
-      18	    try:
-      19	        rows = db.query(RuleDB).all()
-      20	    finally:
-      21	        db.close()
+      17	    """
+      18	    Collects rules from the database and groups them by service name.
+      19	
+      20	    Args:
+      21	        db (Session): The SQLAlchemy session.
       22	
-      23	    grouped: Dict[str, List[str]] = {}
-      24	    for r in rows:
-      25	        # Core 的 action 用 pass/deny，但 Nginx 需要 allow/deny
-      26	        nginx_action = "allow" if r.action == "pass" else "deny"
-      27	        grouped.setdefault(r.service_name, []).append(f"{nginx_action} {r.ip};")
-      28	    return grouped
-      29	
-      30	def sync_all_rules() -> None:
-      31	    """Full synchronisation of the whole rule set."""
-      32	    backend.apply_rules(_collect_rules())
+      23	    Returns:
+      24	        Dict[str, List[str]]: A dictionary where the key is the service name
+      25	                              and the value is a list of rule strings.
+      26	    """
+      27	    grouped: Dict[str, List[str]] = {}
+      28	    rows: List[RuleDB] = db.query(RuleDB).all()
+      29	    for r in rows:
+      30	        action: str = "allow" if r.action == "pass" else "deny"
+      31	        grouped.setdefault(r.service_name, []).append(f"{action} {r.ip};")
+      32	    return grouped
+      33	
+      34	
+      35	# ------------------------------- public API -------------------------------
+      36	
+      37	def sync_to_backend(db: Session) -> None:
+      38	    """
+      39	    Synchronizes rules from the database to the backend.
+      40	
+      41	    Args:
+      42	        db (Session): The SQLAlchemy session.
+      43	    """
+      44	    backend.apply_rules(_collect_rules(db))
+      45	
+      46	
+      47	def announce_new_service(svc_name: str, db: Session) -> None:
+      48	    """
+      49	    Registers a new service with the Core if it is not already registered.
+      50	
+      51	    Args:
+      52	        svc_name (str): The name of the service to register.
+      53	        db (Session): The SQLAlchemy session.
+      54	    """
+      55	    core: core.CoreClient = get_core_client(db)
+      56	    try:
+      57	        svc: ServiceDB | None = db.query(ServiceDB).filter_by(name=svc_name).first()
+      58	        if svc:
+      59	            return  # already known
+      60	        agent: AgentCredentials | None = db.query(AgentCredentials).first()
+      61	        if not agent:
+      62	            logging.warning("No agent credentials found!")
+      63	            return
+      64	
+      65	        resp: core.Service = core.create_service(
+      66	            svc_name, reverse_proxy_uuid=str(agent.uuid))
+      67	        
+      68	        # Register the service in the local database
+      69	        new_service = ServiceDB(id=resp.id, name=svc_name, core_service_id=resp.id)
+      70	        db.add(new_service)
+      71	        db.commit()
+      72	
+      73	        logging.info("📣 Registered service '%s' with Core (id=%s)",
+      74	                     svc_name, resp.id)
+      75	    except Exception as exc:  # noqa: BLE001
+      76	        logging.warning("Failed to register service %s: %s", svc_name, exc)
+      77	    finally:
+      78	        db.close()
 
 ------------------------------ tests/conftest.py ------------------------------
        1	# tests/conftest.py

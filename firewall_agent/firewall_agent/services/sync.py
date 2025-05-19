@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..backends import backend
 from ..clients.core import CoreClient
 from ..config import settings
-from ..dependencies import get_db, get_core_client
+from ..dependencies import get_core_client
 from ..models import AliasDB, RuleDB
 
 
@@ -67,10 +67,9 @@ def _collect_remote(db: Session) -> Tuple[List[Dict], List[Dict]]:
     return new_rules, removed_rules
 
 
-def sync_firewall() -> None:
+def sync_firewall(db: Session) -> None:
     """High‑level sync: fetch → diff → commit → notify Core."""
-    db: Session = next(get_db())  # type: ignore[arg-type]
-    core: CoreClient = get_core_client()
+    core: CoreClient = get_core_client(db)
     try:
         new_rules, removed_rules = _collect_remote(db)
         if new_rules or removed_rules:

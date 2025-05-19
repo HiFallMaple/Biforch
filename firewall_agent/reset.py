@@ -25,19 +25,7 @@ import requests
 # ---------------------------------------------------------------------------
 # Central configuration – import from dedicated module
 # ---------------------------------------------------------------------------
-try:
-    from config import (
-        PREFIX,
-        API_KEY,
-        API_SECRET,
-        REMOTE_URL,
-        TIMEOUT,
-        DB_PATH,  # local SQLite path constant
-    )  # type: ignore
-except ImportError as exc:  # pragma: no cover
-    raise RuntimeError(
-        "Cannot import PREFIX / API credentials. Please create config.py or set PYTHONPATH."
-    ) from exc
+from firewall_agent.config import settings
 
 # ---------------------------------------------------------------------------
 # HTTP helpers
@@ -45,15 +33,15 @@ except ImportError as exc:  # pragma: no cover
 
 
 def opn_get(path: str):
-    res = requests.get(f"{REMOTE_URL}{path}", auth=(
-        API_KEY, API_SECRET), timeout=TIMEOUT)
+    res = requests.get(f"{settings.REMOTE_URL}{path}", auth=(
+        settings.API_KEY, settings.API_SECRET), timeout=settings.TIMEOUT)
     res.raise_for_status()
     return res
 
 
 def opn_post(path: str, json_body=None):
     res = requests.post(
-        f"{REMOTE_URL}{path}", auth=(API_KEY, API_SECRET), json=json_body, timeout=TIMEOUT
+        f"{settings.REMOTE_URL}{path}", auth=(settings.API_KEY, settings.API_SECRET), json=json_body, timeout=settings.TIMEOUT
     )
     res.raise_for_status()
     return res
@@ -71,8 +59,8 @@ def fetch_rule_rows() -> List[Dict]:
 def rule_matches_biforch(uuid_: str) -> bool:
     rule = opn_get(f"/api/firewall/filter/get_rule/{uuid_}").json()["rule"]
     return (
-        (rule.get("source_net") or "").startswith(PREFIX)
-        or (rule.get("destination_net") or "").startswith(PREFIX)
+        (rule.get("source_net") or "").startswith(settings.PREFIX)
+        or (rule.get("destination_net") or "").startswith(settings.PREFIX)
     )
 
 
@@ -102,12 +90,12 @@ def delete_alias(uuid_: str) -> None:
 
 def remove_local_db() -> None:
     """Remove local SQLite file defined by DB_PATH constant."""
-    if os.path.exists(DB_PATH):
+    if os.path.exists(settings.DB_PATH):
         try:
-            os.remove(DB_PATH)
-            logging.info("[DB] removed local %s", DB_PATH)
+            os.remove(settings.DB_PATH)
+            logging.info("[DB] removed local %s", settings.DB_PATH)
         except Exception as exc:  # noqa: BLE001
-            logging.error("Could not remove %s: %s", DB_PATH, exc)
+            logging.error("Could not remove %s: %s", settings.DB_PATH, exc)
 
 # ---------------------------------------------------------------------------
 # Cleanup workflow
@@ -125,7 +113,7 @@ def cleanup() -> None:
 
     # 2️⃣ delete aliases starting with PREFIX
     for uuid_, body in fetch_aliases().items():
-        if body.get("name", "").startswith(PREFIX):
+        if body.get("name", "").startswith(settings.PREFIX):
             try:
                 delete_alias(uuid_)
             except Exception as exc:  # noqa: BLE001

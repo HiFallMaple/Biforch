@@ -32,7 +32,7 @@ freezegun      = "^1.4"
 
 # ---------- CLI entry ----------
 [tool.poetry.scripts]
-firewall-agent = "firewall_agent.api:run"
+firewall-agent = "firewall_agent.cli:app"
 
 # ---------- Build backend ----------
 [build-system]

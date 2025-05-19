@@ -1,4 +1,4 @@
-# Dockerfile.prod
+# Dockerfile.dev
 FROM python:3.12-alpine
 
 RUN apk add --no-cache --virtual .build-deps \
@@ -9,18 +9,16 @@ RUN apk add --no-cache --virtual .build-deps \
 RUN pip install --no-cache poetry
 
 WORKDIR /app
-
 RUN mkdir -p data
-
-COPY firewall_agent/ ./firewall_agent/
 COPY pyproject.toml README.md entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
 RUN poetry lock \
 && poetry config virtualenvs.create false \
-&& poetry install --no-interaction --no-ansi \
+&& poetry install --no-root --no-interaction --no-ansi --with dev \
 && apk del .build-deps 
 
 EXPOSE 8000
 
-CMD ["./entrypoint.sh"]
+# CMD ["./entrypoint.sh"]
+CMD ["tail", "-f", "/dev/null"]
