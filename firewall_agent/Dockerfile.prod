@@ -1,0 +1,25 @@
+# Dockerfile.prod
+FROM python:3.12-alpine
+
+RUN apk add --no-cache \
+      bash \
+      musl-dev \
+      libffi-dev \
+      openssl-dev
+
+RUN pip install --no-cache poetry
+
+WORKDIR /app
+
+RUN mkdir -p data
+
+COPY firewall_agent/ ./firewall_agent/
+COPY pyproject.toml README.md ./
+
+RUN poetry lock \
+&& poetry config virtualenvs.create false \
+&& poetry install --no-interaction --no-ansi
+
+EXPOSE 8000
+
+CMD ["poetry", "run", "firewall-agent"]

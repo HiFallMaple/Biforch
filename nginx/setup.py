@@ -5,22 +5,30 @@ import sys
 import os
 
 # ---------------------------------------------------------------------------
-# Abort immediately unless we are root / sudo
+# Helper for privileged commands via sudo
 # ---------------------------------------------------------------------------
-if os.geteuid() != 0:      # On Windows this attribute is absent – Linux / macOS only
-    print(
-        "[ERROR] This script must be run with super‑user privileges "
-        "(e.g. via `sudo`). Aborting.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+def run_privileged(cmd: list[str]) -> None:
+    """Run a command with sudo, prompting for password if needed."""
+    subprocess.run(["sudo", *cmd], check=True)
 
-# --- project‑local folders ---------------------------------------------------
+# ---------------------------------------------------------------------------
+# Abort immediately unless we are root / sudo for initial checks
+# ---------------------------------------------------------------------------
+def ensure_root():
+    if os.geteuid() != 0:
+        print(
+            "[WARN] Not running as root — privileged operations will use sudo.",
+            file=sys.stderr,
+        )
+
+ensure_root()
+
+# --- project-local folders ---------------------------------------------------
 project_root   = Path(__file__).resolve().parent
 conf_dir       = project_root / "conf.d"
 auto_dir       = project_root / "auto.d"
 
-# --- system folders (require elevated privileges) ---------------------------
+# --- system folders (require privileged ops) ---------------------------------
 sites_enabled  = Path("/etc/nginx/sites-enabled")
 auto_enabled   = Path("/etc/nginx/auto.d")
 
@@ -31,54 +39,46 @@ def warn(msg: str) -> None:
 def info(msg: str) -> None:
     print(f"[INFO] {msg}")
 
-# 1) make sure project folders exist
+# 1) make sure project folders exist (non-privileged)
 if not conf_dir.exists():
     warn("conf.d does not exist, you can refer to configuration in conf.d_example")
     sys.exit(1)
-
 auto_dir.mkdir(parents=True, exist_ok=True)
 
-# 2) clear old symlinks/files -------------------------------------------------
+# 2) clear old symlinks/files (privileged)
 def clear_dir(target: Path) -> None:
+    """Remove all entries in a directory, using sudo if needed."""
     if not target.exists():
         warn(f"{target} does not exist, creating it.")
-        target.mkdir(parents=True, exist_ok=True)
-
+        run_privileged(["mkdir", "-p", str(target)])
     for item in list(target.iterdir()):
-        try:
-            item.unlink()
-            info(f"removed {item}")
-        except Exception as exc:
-            warn(f"failed to remove {item}: {exc!s}")
+        # unlink is privileged
+        run_privileged(["rm", "-f", str(item)])
+        info(f"removed {item}")
 
 clear_dir(sites_enabled)
 clear_dir(auto_enabled)
 
-# 3) reproduce links for each *.conf -----------------------------------------
+# 3) reproduce links for each *.conf (privileged)
 for conf_file in conf_dir.glob("*.conf"):
-    # ensure an empty file exists in auto.d (touch)
     dst_auto_local = auto_dir / conf_file.name
     dst_auto_local.touch(exist_ok=True)
 
-    # system‑wide links
     sys_site_link = sites_enabled / conf_file.name
     sys_auto_link = auto_enabled  / conf_file.name
 
-    # remove if dangling
     for link in (sys_site_link, sys_auto_link):
-        if link.exists() or link.is_symlink():
-            link.unlink(missing_ok=True)
+        run_privileged(["rm", "-f", str(link)])
 
-    # create fresh symlinks
-    os.symlink(conf_file, sys_site_link)
-    os.symlink(dst_auto_local, sys_auto_link)
+    run_privileged(["ln", "-s", str(conf_file), str(sys_site_link)])
+    run_privileged(["ln", "-s", str(dst_auto_local), str(sys_auto_link)])
     info(f"linked {conf_file.name}")
 
-# 4) reload nginx -------------------------------------------------------------
+# 4) reload nginx (privileged)
 info("reloading nginx …")
-subprocess.run(["nginx", "-s", "reload"], check=True)
+run_privileged(["nginx", "-s", "reload"])
 
-# 5) list result --------------------------------------------------------------
+# 5) list result (non-privileged; reading system dir may still require sudo)
 info("--- /etc/nginx/sites-enabled contents ---")
 for entry in sites_enabled.iterdir():
     print(entry)

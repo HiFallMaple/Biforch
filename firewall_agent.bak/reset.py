@@ -27,13 +27,13 @@ import requests
 # ---------------------------------------------------------------------------
 try:
     from config import (
-    PREFIX,
-    API_KEY,
-    API_SECRET,
-    REMOTE_URI,
-    TIMEOUT,
-    FIREWALL_DB,  # local SQLite path constant
-)  # type: ignore
+        PREFIX,
+        API_KEY,
+        API_SECRET,
+        REMOTE_URI,
+        TIMEOUT,
+        DB_PATH,  # local SQLite path constant
+    )  # type: ignore
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError(
         "Cannot import PREFIX / API credentials. Please create config.py or set PYTHONPATH."
@@ -43,20 +43,25 @@ except ImportError as exc:  # pragma: no cover
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
+
 def opn_get(path: str):
-    res = requests.get(f"{REMOTE_URI}{path}", auth=(API_KEY, API_SECRET), timeout=TIMEOUT)
-    res.raise_for_status(); return res
+    res = requests.get(f"{REMOTE_URI}{path}", auth=(
+        API_KEY, API_SECRET), timeout=TIMEOUT)
+    res.raise_for_status()
+    return res
 
 
 def opn_post(path: str, json_body=None):
     res = requests.post(
         f"{REMOTE_URI}{path}", auth=(API_KEY, API_SECRET), json=json_body, timeout=TIMEOUT
     )
-    res.raise_for_status(); return res
+    res.raise_for_status()
+    return res
 
 # ---------------------------------------------------------------------------
 # Rule helpers
 # ---------------------------------------------------------------------------
+
 
 def fetch_rule_rows() -> List[Dict]:
     """Return list of rule rows from search endpoint."""
@@ -79,9 +84,11 @@ def delete_rule(uuid_: str) -> None:
 # Alias helpers
 # ---------------------------------------------------------------------------
 
+
 def fetch_aliases() -> Dict[str, Dict]:
     data = opn_get("/api/firewall/alias/get").json()
-    return data.get("alias", {}).get("aliases", {}).get("alias", {})  # {uuid: {...}}
+    # {uuid: {...}}
+    return data.get("alias", {}).get("aliases", {}).get("alias", {})
 
 
 def delete_alias(uuid_: str) -> None:
@@ -92,18 +99,20 @@ def delete_alias(uuid_: str) -> None:
 # Local DB helper
 # ---------------------------------------------------------------------------
 
+
 def remove_local_db() -> None:
-    """Remove local SQLite file defined by FIREWALL_DB constant."""
-    if os.path.exists(FIREWALL_DB):
+    """Remove local SQLite file defined by DB_PATH constant."""
+    if os.path.exists(DB_PATH):
         try:
-            os.remove(FIREWALL_DB)
-            logging.info("[DB] removed local %s", FIREWALL_DB)
+            os.remove(DB_PATH)
+            logging.info("[DB] removed local %s", DB_PATH)
         except Exception as exc:  # noqa: BLE001
-            logging.error("Could not remove %s: %s", FIREWALL_DB, exc)
+            logging.error("Could not remove %s: %s", DB_PATH, exc)
 
 # ---------------------------------------------------------------------------
 # Cleanup workflow
 # ---------------------------------------------------------------------------
+
 
 def cleanup() -> None:
     # 1️⃣ delete matching rules first
@@ -123,9 +132,18 @@ def cleanup() -> None:
                 logging.error("Failed to delete alias %s: %s", uuid_, exc)
 
 # ---------------------------------------------------------------------------
-if __name__ == "__main__":
+
+
+def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
-        cleanup(); remove_local_db(); logging.info("Cleanup complete.")
+        cleanup()
+        remove_local_db()
+        logging.info("Cleanup complete.")
     except Exception as exc:  # noqa: BLE001
-        logging.error("Uncaught error: %s", exc); sys.exit(1)
+        logging.error("Uncaught error: %s", exc)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,1708 @@
+============================== PROJECT TREE ==============================
+.
+├── config.py
+├── data
+├── docker-compose.dev.yml
+├── docker-compose.prod.yml
+├── Dockerfile.dev
+├── Dockerfile.prod
+├── .env
+├── firewall_agent
+│   ├── api.py
+│   ├── backends
+│   │   ├── base.py
+│   │   ├── __init__.py
+│   │   └── opnsense.py
+│   ├── clients
+│   │   └── core.py
+│   ├── cli.py
+│   ├── config.py
+│   ├── database.py
+│   ├── dependencies.py
+│   ├── __init__.py
+│   ├── models.py
+│   ├── schemas.py
+│   └── services
+│       └── sync.py
+├── pyproject.toml
+├── README.md
+└── tests
+    └── test_firewall_agent.py
+
+7 directories, 22 files
+
+============================ FILE CONTENTS ==============================
+------------------------------ config.py ------------------------------
+       1	import os
+       2	from typing import Dict
+       3	from dotenv import load_dotenv
+       4	
+       5	# Load environment variables from .env file once
+       6	load_dotenv()
+       7	
+       8	
+       9	def get_env_str(name: str) -> str:
+      10	    """
+      11	    Retrieve an environment variable or raise an error if missing.
+      12	    """
+      13	    value = os.getenv(name)
+      14	    if not value:
+      15	        raise RuntimeError(f"Environment variable '{name}' must be set")
+      16	    return value
+      17	
+      18	
+      19	def get_env_int(name: str) -> int:
+      20	    """
+      21	    Retrieve an environment variable as int or raise error if missing/invalid.
+      22	    """
+      23	    val_str = get_env_str(name)
+      24	    try:
+      25	        return int(val_str)
+      26	    except ValueError:
+      27	        raise RuntimeError(
+      28	            f"Environment variable '{name}' must be an integer, got '{val_str}'")
+      29	
+      30	
+      31	# Required configuration variables
+      32	
+      33	PREFIX = get_env_str("PREFIX")
+      34	API_KEY = get_env_str("API_KEY")
+      35	API_SECRET = get_env_str("API_SECRET")
+      36	REMOTE_URL = get_env_str("REMOTE_URL")
+      37	CORE_URL = get_env_str("CORE_URL")
+      38	TIMEOUT = get_env_int("TIMEOUT")
+      39	DB_PATH = get_env_str("DB_PATH")  # local SQLite path constant
+      40	ACTION_MAP: Dict[str, str] = {
+      41	    "pass": "pass",
+      42	    "block": "block",
+      43	    "reject": "block",
+      44	}
+
+------------------------------ docker-compose.dev.yml ------------------------------
+       1	# docker-compose.dev.yml
+       2	services:
+       3	  firewall-agent:
+       4	    build:
+       5	      context: .
+       6	      dockerfile: Dockerfile.dev
+       7	    volumes:
+       8	      - ./firewall_agent:/app/firewall_agent
+       9	    env_file:
+      10	      - .env
+      11	    ports:
+      12	      - "$PORT:8000"
+
+------------------------------ docker-compose.prod.yml ------------------------------
+       1	# docker-compose.prod.yml
+       2	
+       3	services:
+       4	  firewall-agent:
+       5	    build:
+       6	      context: .
+       7	      dockerfile: Dockerfile.prod
+       8	    env_file:
+       9	      - .env
+      10	    ports:
+      11	      - "8000:8000"
+      12	    volumes:
+      13	      - ./data:/app/data
+      14	    restart: always
+
+------------------------------ Dockerfile.dev ------------------------------
+       1	# Dockerfile.dev
+       2	FROM python:3.12-alpine
+       3	
+       4	RUN apk add --no-cache \
+       5	      bash \
+       6	      musl-dev \
+       7	      libffi-dev \
+       8	      openssl-dev
+       9	
+      10	RUN pip install --no-cache poetry
+      11	
+      12	WORKDIR /app
+      13	RUN mkdir -p data
+      14	COPY pyproject.toml README.md ./
+      15	
+      16	
+      17	RUN poetry lock \
+      18	&& poetry config virtualenvs.create false \
+      19	&& poetry install --no-root --no-interaction --no-ansi --with dev
+      20	
+      21	EXPOSE 8000
+      22	
+      23	# CMD ["tail", "-f", "/dev/null"]
+      24	CMD ["poetry", "run", "firewall-agent"]
+
+------------------------------ Dockerfile.prod ------------------------------
+       1	# Dockerfile.prod
+       2	FROM python:3.12-alpine
+       3	
+       4	RUN apk add --no-cache \
+       5	      bash \
+       6	      musl-dev \
+       7	      libffi-dev \
+       8	      openssl-dev
+       9	
+      10	RUN pip install --no-cache poetry
+      11	
+      12	WORKDIR /app
+      13	
+      14	RUN mkdir -p data
+      15	
+      16	COPY firewall_agent/ ./firewall_agent/
+      17	COPY pyproject.toml README.md ./
+      18	
+      19	RUN poetry lock \
+      20	&& poetry config virtualenvs.create false \
+      21	&& poetry install --no-interaction --no-ansi
+      22	
+      23	EXPOSE 8000
+      24	
+      25	CMD ["poetry", "run", "firewall-agent"]
+
+------------------------------ .env ------------------------------
+       1	PREFIX=Biforch_
+       2	API_KEY=7beKiNep5x7bS8G4Wjqb1G3Sk/6uMs+yH1J9p58cGJSUOf5zGW8qloEcfT4AqR9YMMGASP3Sn0l5Y7gc
+       3	API_SECRET=S8kU5NcxtFkBuAl2PcNv8C+luxsg1CaukIT/uQGU1VGMhf4b0C0ticcRZrsRcDfJSQ7T7ZEghkdpy8E/
+       4	BIFORCH_TOKEN='SLDKj'
+       5	BIFORCH_UUID='7b6cd99d-0823-41a0-a218-080654771af9'
+       6	REMOTE_URL=http://192.168.87.1
+       7	CORE_URL=http://192.168.87.10:8001
+       8	AGENT_URL=http://192.168.87.10:8000
+       9	AGENT_NAME=opnsense
+      10	TIMEOUT=15
+      11	PORT=8000
+      12	RELOAD=true
+
+------------------------------ firewall_agent/api.py ------------------------------
+       1	"""FastAPI entry‑point – contains *only* HTTP concerns."""
+       2	from __future__ import annotations
+       3	
+       4	import logging
+       5	import threading
+       6	import time
+       7	from contextlib import asynccontextmanager
+       8	from typing import List
+       9	
+      10	from fastapi import Depends, FastAPI, HTTPException
+      11	from sqlalchemy.orm import Session
+      12	
+      13	from .schemas import (
+      14	    ReverseProxyIn,
+      15	    ReverseProxyOut,
+      16	    AliasIn,
+      17	    AliasOut,
+      18	    RuleOut,
+      19	)
+      20	from .models import ReverseProxyDB, AliasDB, RuleDB
+      21	from .config import settings
+      22	from .dependencies import get_db, get_backend
+      23	from .services.sync import sync_firewall
+      24	
+      25	# ------------------------------------------------------------------ Lifespan
+      26	
+      27	
+      28	@asynccontextmanager
+      29	async def lifespan(_: FastAPI):
+      30	    """Background thread monitors firewall every 10 s."""
+      31	    stop = threading.Event()
+      32	
+      33	    def _worker():
+      34	        while not stop.is_set():
+      35	            sync_firewall()
+      36	            time.sleep(10)
+      37	
+      38	    thread = threading.Thread(target=_worker, daemon=True)
+      39	    thread.start()
+      40	    try:
+      41	        yield
+      42	    finally:
+      43	        stop.set()
+      44	        thread.join(timeout=1)
+      45	
+      46	
+      47	app = FastAPI(title="Firewall Agent", lifespan=lifespan)
+      48	
+      49	# ---------------------------------------------------------------- Proxies
+      50	
+      51	
+      52	@app.post("/reverse_proxies", response_model=ReverseProxyOut)
+      53	def create_reverse_proxy(body: ReverseProxyIn, db: Session = Depends(get_db)) -> ReverseProxyOut:
+      54	    if db.get(ReverseProxyDB, body.uuid):
+      55	        raise HTTPException(400, "uuid already registered")
+      56	    obj = ReverseProxyDB(
+      57	        id=body.uuid,
+      58	        name=body.name,
+      59	        ip=str(body.ip),
+      60	        ports=",".join(map(str, body.ports)),
+      61	        allowed_ips=",".join(body.allowed_ips),
+      62	    )
+      63	    db.add(obj)
+      64	    db.commit()
+      65	    db.refresh(obj)
+      66	    return ReverseProxyOut(id=obj.id)
+      67	
+      68	
+      69	@app.get("/reverse_proxies", response_model=List[ReverseProxyIn])
+      70	def list_reverse_proxies(db: Session = Depends(get_db)) -> List[ReverseProxyIn]:
+      71	    records = db.query(ReverseProxyDB).all()
+      72	    return [
+      73	        ReverseProxyIn(
+      74	            uuid=r.id,
+      75	            name=r.name,
+      76	            ip=r.ip,
+      77	            ports=list(map(int, r.ports.split(","))),
+      78	            allowed_ips=r.allowed_ips.split(","),
+      79	        )
+      80	        for r in records
+      81	    ]
+      82	
+      83	# ----------------------------------------------------------------- Aliases
+      84	
+      85	
+      86	@app.get("/aliases", response_model=List[AliasOut])
+      87	def list_aliases(db: Session = Depends(get_db)) -> List[AliasOut]:
+      88	    aliases = db.query(AliasDB).all()
+      89	    return [AliasOut.model_validate(a) for a in aliases]
+      90	
+      91	
+      92	@app.post("/aliases", response_model=AliasOut)
+      93	def create_alias(body: AliasIn, backend=Depends(get_backend), db: Session = Depends(get_db)) -> AliasOut:  # noqa: E501
+      94	    alias_uuid = backend.create_alias(body.service_name)
+      95	    obj = AliasDB(id=alias_uuid, service_name=body.service_name)
+      96	    db.add(obj)
+      97	    db.commit()
+      98	    return AliasOut(id=obj.id, service_name=obj.service_name)
+      99	
+     100	
+     101	@app.delete("/aliases/{alias_id}")
+     102	def delete_alias(
+     103	    alias_id: str,
+     104	    backend=Depends(get_backend),
+     105	    db: Session = Depends(get_db),
+     106	):
+     107	    """
+     108	    Delete an existing service-alias:
+     109	      1) attempt to delete it on the firewall backend,
+     110	      2) remove it from the local DB.
+     111	    """
+     112	    alias = db.get(AliasDB, alias_id)
+     113	    if not alias:
+     114	        raise HTTPException(404, "alias not found")
+     115	
+     116	    # try to remove it on the external firewall
+     117	    try:
+     118	        if hasattr(backend, "delete_alias"):
+     119	            backend.delete_alias(alias_id)
+     120	        else:
+     121	            # if your backend has a different delete method, call it here
+     122	            pass
+     123	    except Exception as exc:
+     124	        logging.warning("Failed to delete alias on firewall: %s", exc)
+     125	
+     126	    # remove from local database
+     127	    db.delete(alias)
+     128	    db.commit()
+     129	    return {}
+     130	
+     131	
+     132	# ------------------------------------------------------------------- Rules
+     133	
+     134	@app.get("/rules", response_model=List[RuleOut])
+     135	def list_rules(db: Session = Depends(get_db)) -> List[RuleOut]:
+     136	    rows = db.query(RuleDB).all()
+     137	    res: List[RuleOut] = []
+     138	    for r in rows:
+     139	        alias = db.get(AliasDB, r.dest_alias_id)
+     140	        res.append(
+     141	            RuleOut(
+     142	                id=r.id,
+     143	                action=r.action,
+     144	                src_ip=r.src_ip,
+     145	                service_name=alias.service_name if alias else None,
+     146	            )
+     147	        )
+     148	    return res
+     149	
+     150	
+     151	
+     152	
+
+------------------------------ firewall_agent/backends/base.py ------------------------------
+       1	from typing import Any, Dict, List, Protocol
+       2	
+       3	
+       4	class FirewallBackend(Protocol):
+       5	    """Minimal contract every backend must fulfil."""
+       6	
+       7	    # ------------------ Alias management ------------------
+       8	    def create_alias(self, name: str) -> str:
+       9	        ...
+      10	
+      11	    def delete_alias(self, uuid: str) -> None:
+      12	        ...
+      13	
+      14	    # ------------------ Rule management ------------------
+      15	    def list_rules(self) -> List[Dict[str, Any]]:
+      16	        ...
+      17	
+      18	    def rule_details(self, uuid: str) -> Dict[str, Any]:
+      19	        ...
+
+------------------------------ firewall_agent/backends/__init__.py ------------------------------
+       1	"""Backend factory – returns a singleton *firewall backend* according to settings.
+       2	Currently only OPNsense is implemented, but the design allows additional engines."""
+       3	from __future__ import annotations
+       4	
+       5	from .base import FirewallBackend  # type: ignore  (Protocol)
+       6	from .opnsense import OPNsenseBackend
+       7	
+       8	backend: FirewallBackend = OPNsenseBackend()
+       9	
+      10	__all__ = ["backend"]
+
+------------------------------ firewall_agent/backends/opnsense.py ------------------------------
+       1	"""OPNsense backend – wraps REST API calls used by the agent."""
+       2	from __future__ import annotations
+       3	
+       4	import logging
+       5	from typing import Any, Dict, List
+       6	
+       7	import requests
+       8	
+       9	from ..config import settings
+      10	
+      11	
+      12	class OPNsenseBackend:
+      13	    """Concrete implementation of :class:`FirewallBackend`."""
+      14	
+      15	    base_url: str = str(settings.REMOTE_URL).rstrip("/")
+      16	    auth: tuple[str, str] = (settings.API_KEY, settings.API_SECRET)
+      17	
+      18	    # ----------------------------------------------------------- Aliases
+      19	    def create_alias(self, name: str) -> str:
+      20	        payload = {
+      21	            "alias": {
+      22	                "enabled": "1",
+      23	                "name": f"{settings.PREFIX}{name}",
+      24	                "type": "host"
+      25	            }
+      26	        }
+      27	        resp = requests.post(
+      28	            f"{self.base_url}/api/firewall/alias/add_item",
+      29	            auth=self.auth,
+      30	            json=payload,
+      31	            timeout=settings.TIMEOUT,
+      32	        )
+      33	        try:
+      34	            data = resp.json()
+      35	            logging.debug(f"OPNsense alias/add_item response JSON: {data}")
+      36	            resp.raise_for_status()
+      37	        except Exception as exc:  # noqa: BLE001
+      38	            logging.error("OPNsense alias create failed: %s", exc)
+      39	            print(f"Error during alias creation: status={resp.status_code}, text={resp.text}")
+      40	            raise
+      41	
+      42	        # Use INFO level so it's visible under default settings
+      43	        logging.info("OPNsense alias response: %s", data)
+      44	
+      45	        # Adjust conditions based on actual API return structure
+      46	        uuid = data.get("uuid") or data.get("alias", {}).get("uuid")
+      47	        if data.get("result") != "saved" or not uuid:
+      48	            msg = f"Unexpected response from OPNsense alias/add_item: {data}"
+      49	            logging.error(msg)
+      50	            raise RuntimeError(msg)
+      51	        return uuid
+      52	
+      53	    def delete_alias(self, uuid: str) -> None:
+      54	        """
+      55	        Delete an existing alias by UUID.
+      56	        Raises an exception if the operation fails.
+      57	        """
+      58	        resp = requests.post(
+      59	            f"{self.base_url}/api/firewall/alias/del_item/{uuid}",
+      60	            auth=self.auth,
+      61	            timeout=settings.TIMEOUT,
+      62	        )
+      63	        resp.raise_for_status()
+      64	
+      65	    # ------------------------------------------------------------ Rules
+      66	    def list_rules(self) -> List[Dict[str, Any]]:
+      67	        resp = requests.get(
+      68	            f"{self.base_url}/api/firewall/filter/search_rule",
+      69	            auth=self.auth,
+      70	            timeout=settings.TIMEOUT,
+      71	        )
+      72	        resp.raise_for_status()
+      73	        return resp.json().get("rows", [])
+      74	
+      75	    def rule_details(self, uuid: str) -> Dict[str, Any]:
+      76	        resp = requests.get(
+      77	            f"{self.base_url}/api/firewall/filter/get_rule/{uuid}",
+      78	            auth=self.auth,
+      79	            timeout=settings.TIMEOUT,
+      80	        )
+      81	        resp.raise_for_status()
+      82	        return resp.json().get("rule", {})
+
+------------------------------ firewall_agent/clients/core.py ------------------------------
+       1	from uuid import UUID
+       2	import requests
+       3	import logging
+       4	from typing import Any, Dict, List, Optional
+       5	from dataclasses import dataclass
+       6	
+       7	
+       8	# ---------------------------------------------------------------------
+       9	# Data models
+      10	# ---------------------------------------------------------------------
+      11	@dataclass
+      12	class PendingRequest:
+      13	    request_id: int
+      14	    secret: str
+      15	
+      16	
+      17	@dataclass
+      18	class PendingItem:
+      19	    id: int
+      20	    type: str
+      21	    data: str
+      22	    src_ip: str
+      23	    secret: str
+      24	    created_at: str
+      25	
+      26	
+      27	@dataclass
+      28	class PendingApprove:
+      29	    id: int
+      30	    status: str
+      31	    entity_id: Optional[int]
+      32	
+      33	
+      34	@dataclass
+      35	class Service:
+      36	    id: int
+      37	
+      38	
+      39	@dataclass
+      40	class Rule:
+      41	    firewall_rule_uuid: str
+      42	
+      43	# ---------------------------------------------------------------------
+      44	# Client implementation
+      45	# ---------------------------------------------------------------------
+      46	
+      47	
+      48	class CoreClientError(Exception):
+      49	    """Generic exception for CoreClient errors."""
+      50	    pass
+      51	
+      52	
+      53	class CoreClient:
+      54	    def __init__(
+      55	        self,
+      56	        base_url: str,
+      57	        admin_token: Optional[str] = None,
+      58	        actor_token: Optional[str] = None,
+      59	        timeout: int = 10,
+      60	    ):
+      61	        """
+      62	        :param base_url: URL of Core service (e.g. http://localhost:8001)
+      63	        :param admin_token: Bearer token for admin operations
+      64	        :param actor_token: Bearer token for actor operations (firewall/proxy/discovery)
+      65	        :param timeout: HTTP request timeout in seconds
+      66	        """
+      67	        self.base_url = base_url.rstrip('/')
+      68	        self._admin_token = admin_token
+      69	        self._actor_token = actor_token
+      70	        self.timeout = timeout
+      71	
+      72	    def set_actor_token(self, token: str) -> None:
+      73	        """Set token for actor (firewall/proxy/discovery) calls."""
+      74	        self._actor_token = token
+      75	
+      76	    def _build_headers(self, admin: bool = False) -> Dict[str, str]:
+      77	        headers: Dict[str, str] = {}
+      78	        if admin:
+      79	            if not self._admin_token:
+      80	                raise CoreClientError(
+      81	                    "Admin token is required for this operation")
+      82	            headers['Authorization'] = f"Bearer {self._admin_token}"
+      83	        else:
+      84	            if not self._actor_token:
+      85	                raise CoreClientError(
+      86	                    "Actor token is required for this operation")
+      87	            headers['Authorization'] = f"Bearer {self._actor_token}"
+      88	        return headers
+      89	
+      90	    def _request(
+      91	        self,
+      92	        method: str,
+      93	        path: str,
+      94	        json: Optional[Dict[str, Any]] = None,
+      95	        admin: bool = False,
+      96	        auth: bool = True,
+      97	    ) -> Any:
+      98	        """
+      99	        Internal helper to send HTTP requests to Core.
+     100	
+     101	        :param method: HTTP method
+     102	        :param path: API path (prefixed with base_url)
+     103	        :param json: JSON body
+     104	        :param admin: whether to use admin token
+     105	        :param auth: whether to include Authorization header
+     106	        """
+     107	        url = f"{self.base_url}{path}"
+     108	        headers = self._build_headers(admin=admin) if auth else {}
+     109	        resp = requests.request(
+     110	            method, url, json=json, headers=headers, timeout=self.timeout
+     111	        )
+     112	        try:
+     113	            resp.raise_for_status()
+     114	        except Exception as exc:
+     115	            logging.error(f"HTTP {method} {url} failed: {exc}, {resp.text}")
+     116	            raise CoreClientError(f"{method} {url} failed: {resp.text}")
+     117	        if resp.text:
+     118	            return resp.json()
+     119	        return None
+     120	
+     121	    # -----------------------------------------------------------------
+     122	    # Registration (pending queue) – public endpoints, no auth required
+     123	    # -----------------------------------------------------------------
+     124	    def register_firewall(self, name: str, api_url: str) -> PendingRequest:
+     125	        """Enqueue a firewall registration (returns request_id and secret). No token needed."""
+     126	        data = self._request(
+     127	            'POST',
+     128	            '/firewall',
+     129	            json={'name': name, 'api_url': api_url},
+     130	            admin=False,
+     131	            auth=False,
+     132	        )
+     133	        return PendingRequest(**data)
+     134	
+     135	    def register_reverse_proxy(
+     136	        self, name: str, ip: str, ports: List[int], api_url: str
+     137	    ) -> PendingRequest:
+     138	        """Enqueue a reverse-proxy registration. No token needed."""
+     139	        data = self._request(
+     140	            'POST',
+     141	            '/reverse_proxy',
+     142	            json={'name': name, 'ip': ip, 'ports': ports, 'api_url': api_url},
+     143	            admin=False,
+     144	            auth=False,
+     145	        )
+     146	        return PendingRequest(**data)
+     147	
+     148	    def register_service_discovery(
+     149	        self, name: str, bind_reverse_proxy_id: int, api_url: str
+     150	    ) -> PendingRequest:
+     151	        """Enqueue a service-discovery registration. No token needed."""
+     152	        data = self._request(
+     153	            'POST',
+     154	            '/service_discovery',
+     155	            json={
+     156	                'name': name,
+     157	                'bind_reverse_proxy_id': bind_reverse_proxy_id,
+     158	                'api_url': api_url,
+     159	            },
+     160	            admin=False,
+     161	            auth=False,
+     162	        )
+     163	        return PendingRequest(**data)
+     164	
+     165	    # -----------------------------------------------------------------
+     166	    # Admin: pending operations
+     167	    # -----------------------------------------------------------------
+     168	    def list_pending(self) -> List[PendingItem]:
+     169	        """List all pending registration requests (admin only)."""
+     170	        items = self._request('GET', '/pending_registrations', admin=True)
+     171	        return [PendingItem(**i) for i in items]
+     172	
+     173	    def approve_pending(self, request_id: int) -> PendingApprove:
+     174	        """Approve a pending request by ID (admin only)."""
+     175	        data = self._request(
+     176	            'PATCH',
+     177	            f'/pending_registrations/{request_id}',
+     178	            json={'action': 'approve'},
+     179	            admin=True,
+     180	        )
+     181	        return PendingApprove(**data)
+     182	
+     183	    def reject_pending(self, request_id: int) -> PendingApprove:
+     184	        """Reject a pending request by ID (admin only)."""
+     185	        data = self._request(
+     186	            'PATCH',
+     187	            f'/pending_registrations/{request_id}',
+     188	            json={'action': 'reject'},
+     189	            admin=True,
+     190	        )
+     191	        return PendingApprove(**data)
+     192	
+     193	    # -----------------------------------------------------------------
+     194	    # Admin: delete approved entities
+     195	    # -----------------------------------------------------------------
+     196	    def delete_firewall(self, fw_id: int) -> None:
+     197	        """Delete a registered firewall (admin only)."""
+     198	        self._request('DELETE', f'/firewall/{fw_id}', admin=True)
+     199	
+     200	    def delete_reverse_proxy(self, rp_id: int) -> None:
+     201	        """Delete a registered reverse proxy (admin only)."""
+     202	        self._request('DELETE', f'/reverse_proxy/{rp_id}', admin=True)
+     203	
+     204	    def delete_service_discovery(self, sd_id: int) -> None:
+     205	        """Delete a registered service discovery (admin only)."""
+     206	        self._request('DELETE', f'/service_discovery/{sd_id}', admin=True)
+     207	
+     208	    # -----------------------------------------------------------------
+     209	    # Actor: manage services
+     210	    # -----------------------------------------------------------------
+     211	    def create_service(self, service: str, reverse_proxy_uuid: str) -> Service:
+     212	        """Create a new service (actor token required)."""
+     213	        data = self._request(
+     214	            'POST',
+     215	            '/service',
+     216	            json={'service': service, 'reverse_proxy_uuid': reverse_proxy_uuid},
+     217	            admin=False,
+     218	        )
+     219	        return Service(**data)
+     220	
+     221	    def delete_service(self, service_id: int) -> None:
+     222	        """Delete an existing service (actor token required)."""
+     223	        self._request('DELETE', f'/service/{service_id}', admin=False)
+     224	
+     225	    # -----------------------------------------------------------------
+     226	    # Actor: manage rules (firewall actor)
+     227	    # -----------------------------------------------------------------
+     228	    def create_rule(
+     229	        self, firewall_rule_uuid: str, action: str, ip: str, service: str
+     230	    ) -> Rule:
+     231	        """Create a new firewall rule (firewall actor token required)."""
+     232	        data = self._request(
+     233	            'POST',
+     234	            '/rules',
+     235	            json={
+     236	                'firewall_rule_uuid': firewall_rule_uuid,
+     237	                'action': action,
+     238	                'ip': ip,
+     239	                'service': service,
+     240	            },
+     241	            admin=False,
+     242	        )
+     243	        return Rule(**data)
+     244	
+     245	    def delete_rule(self, firewall_rule_uuid: str) -> None:
+     246	        """Delete a firewall rule (firewall actor token required)."""
+     247	        self._request('DELETE', f'/rules/{firewall_rule_uuid}', admin=False)
+
+------------------------------ firewall_agent/cli.py ------------------------------
+       1	#!/usr/bin/env python3
+       2	# firewall_agent/cli.py
+       3	
+       4	"""
+       5	Command-line interface for Biforch Firewall Agent.
+       6	Provides commands to enqueue registration with Biforch Core
+       7	and to start the API server.
+       8	After registration, stores received UUID and token in local database.
+       9	"""
+      10	import threading
+      11	import logging
+      12	
+      13	import typer
+      14	import uvicorn
+      15	from fastapi import FastAPI, HTTPException
+      16	from pydantic import BaseModel
+      17	from typing import Dict, Literal, Optional
+      18	
+      19	from .config import settings
+      20	from .clients.core import CoreClient
+      21	from .database import SessionLocal
+      22	from .models import AgentCredentials
+      23	
+      24	app = typer.Typer(help="Biforch Firewall Agent CLI")
+      25	
+      26	
+      27	class RegistrationCallback(BaseModel):
+      28	    """
+      29	    Model for Core's callback payload.
+      30	    Core will POST {"secret": "...", "action": "approve|reject", "uuid": "...", "token": "..."}
+      31	    """
+      32	    secret: str
+      33	    action: Literal["approve", "reject"]
+      34	    uuid: Optional[str]
+      35	    token: Optional[str]
+      36	
+      37	
+      38	@app.command()
+      39	def init():
+      40	    """
+      41	    1) If already registered, report existing credentials and exit.
+      42	    2) Launch temporary FastAPI server to receive Core's callback.
+      43	    3) Enqueue a firewall registration request to Core (using settings.CORE_URL).
+      44	    4) Block until Core calls back, then store credentials & exit.
+      45	    """
+      46	    # Check for existing credentials
+      47	    db = SessionLocal()
+      48	    existing = db.query(AgentCredentials).first()
+      49	    if existing:
+      50	        typer.secho(
+      51	            f"🔒 Already registered:\n  UUID: {existing.uuid}\n  Token: {existing.token}",
+      52	            fg=typer.colors.YELLOW
+      53	        )
+      54	        db.close()
+      55	        return
+      56	
+      57	    callback_data: Dict[str, str] = {}
+      58	    event = threading.Event()
+      59	
+      60	    # Build temporary FastAPI app for callback
+      61	    server_app = FastAPI()
+      62	
+      63	    @server_app.post(settings.CALLBACK_PATH)
+      64	    async def receive_callback(body: RegistrationCallback):
+      65	        # Validate secret
+      66	        if body.secret != callback_data.get("secret"):
+      67	            raise HTTPException(400, "Invalid secret")
+      68	        callback_data["action"] = body.action
+      69	        # On approval, capture uuid and token
+      70	        if body.action == "approve":
+      71	            callback_data["uuid"] = body.uuid or ""
+      72	            callback_data["token"] = body.token or ""
+      73	        # Signal shutdown and notifying main thread
+      74	        server.should_exit = True
+      75	        event.set()
+      76	        return {"status": "received"}
+      77	
+      78	    # Start Uvicorn server in background
+      79	    config = uvicorn.Config(
+      80	        server_app,
+      81	        host=settings.INTERNAL_HOST,
+      82	        port=settings.INTERNAL_PORT,
+      83	        log_level="info",
+      84	        lifespan="on"
+      85	    )
+      86	    server = uvicorn.Server(config)
+      87	    thread = threading.Thread(target=server.run, daemon=True)
+      88	    thread.start()
+      89	    typer.echo(
+      90	        f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
+      91	    )
+      92	
+      93	    # Enqueue registration with Core
+      94	    client = CoreClient(base_url=str(settings.CORE_URL))
+      95	    pending = client.register_firewall(
+      96	        name=settings.AGENT_NAME,
+      97	        api_url=str(settings.AGENT_URL),
+      98	    )
+      99	    callback_data["secret"] = pending.secret
+     100	    typer.echo(
+     101	        f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
+     102	    )
+     103	
+     104	    # Block until callback arrives
+     105	    event.wait()
+     106	
+     107	    # Shutdown server thread
+     108	    thread.join(timeout=1)
+     109	
+     110	    # Report and store result
+     111	    action = callback_data.get("action")
+     112	    if action == "approve":
+     113	        uuid_str = callback_data.get("uuid", "")
+     114	        token_str = callback_data.get("token", "")
+     115	        # Persist credentials in DB
+     116	        db.add(AgentCredentials(uuid=uuid_str, token=token_str))
+     117	        db.commit()
+     118	        db.close()
+     119	        typer.secho(
+     120	            f"✅ Registration approved!\n  UUID: {uuid_str}\n  Token: {token_str}",
+     121	            fg=typer.colors.GREEN
+     122	        )
+     123	    else:
+     124	        typer.secho("❌ Registration was rejected by Core", fg=typer.colors.RED)
+     125	
+     126	
+     127	@app.command()
+     128	def serve():
+     129	    """
+     130	    Start the Biforch Firewall Agent API server
+     131	    (which runs background syncs, etc.).
+     132	    """
+     133	    import uvicorn
+     134	    from .api import app as api_app
+     135	
+     136	    logging.basicConfig(
+     137	        level=logging.INFO,
+     138	        format="%(levelname)s: %(message)s"
+     139	    )
+     140	    uvicorn.run(
+     141	        api_app,
+     142	        host=settings.INTERNAL_HOST,
+     143	        port=settings.INTERNAL_PORT,
+     144	        reload=settings.RELOAD
+     145	    )
+     146	
+     147	
+     148	if __name__ == "__main__":
+     149	    app()
+
+------------------------------ firewall_agent/config.py ------------------------------
+       1	"""Central runtime configuration for Firewall Agent, loaded from environment variables.
+       2	
+       3	Uses **pydantic-settings** for strong validation – fails fast on startup.
+       4	Includes both API (OPNsense/Core) and server (Uvicorn) settings.
+       5	"""
+       6	from __future__ import annotations
+       7	
+       8	import sys
+       9	from pathlib import Path
+      10	from typing import Dict
+      11	from uuid import UUID
+      12	
+      13	from pydantic import AnyHttpUrl, ValidationError, Field, field_validator
+      14	from pydantic_settings import BaseSettings
+      15	
+      16	
+      17	class Settings(BaseSettings):
+      18	    # ----------------------- essential paths / URLs ------------------------
+      19	    CORE_URL: AnyHttpUrl             # e.g. "http://core.example.com:8001/"
+      20	    REMOTE_URL: AnyHttpUrl           # OPNsense base URL
+      21	    AGENT_URL: AnyHttpUrl            # e.g. "http://agent.example.com:8000/"  
+      22	
+      23	    # ----------------------- identification / auth ------------------------
+      24	    API_KEY: str                     # API key for OPNsense
+      25	    API_SECRET: str                  # API secret for OPNsense
+      26	    PREFIX: str = Field(
+      27	        default="Biforch_",
+      28	        description="Alias prefix on OPNsense",
+      29	    )
+      30	    AGENT_NAME: str
+      31	    CALLBACK_PATH: str = Field(
+      32	        default="/registrations",
+      33	        description="Path for Core's callback",
+      34	    )
+      35	
+      36	    # ----------------------- runtime behaviour ----------------------------
+      37	    TIMEOUT: int = Field(
+      38	        default=10,
+      39	        description="Outbound HTTP timeout, in seconds",
+      40	    )
+      41	    DB_PATH: Path = Field(
+      42	        default=Path("data/firewall.db"),
+      43	        description="Path to local SQLite database file",
+      44	    )
+      45	
+      46	    # ----------------------- server settings ------------------------------
+      47	    INTERNAL_HOST: str = Field(
+      48	        default="0.0.0.0",
+      49	        description="Uvicorn server host",
+      50	    )
+      51	    INTERNAL_PORT: int = Field(
+      52	        default=8000,
+      53	        description="Uvicorn server port",
+      54	    )
+      55	    RELOAD: bool = Field(
+      56	        default=False,
+      57	        description="Enable Uvicorn auto-reload in development",
+      58	    )
+      59	
+      60	    # ----------------------- internal mappings ----------------------------
+      61	    ACTION_MAP: Dict[str, str] = {
+      62	        "pass": "pass",
+      63	        "block": "block",
+      64	        "reject": "block",
+      65	    }
+      66	
+      67	    model_config = {
+      68	        "extra": "ignore",
+      69	    }
+      70	
+      71	    # ---------------------------- validators ------------------------------
+      72	    @field_validator("TIMEOUT", mode="before")
+      73	    @classmethod
+      74	    def _timeout_positive(cls, v: int | str) -> int:
+      75	        value = int(v)
+      76	        if value <= 0:
+      77	            raise ValueError("TIMEOUT must be positive")
+      78	        return value
+      79	
+      80	    @field_validator("INTERNAL_PORT", mode="before")
+      81	    @classmethod
+      82	    def _validate_port(cls, v: int | str) -> int:
+      83	        value = int(v)
+      84	        if not (1 <= value <= 65535):
+      85	            raise ValueError("INTERNAL_PORT must be between 1 and 65535")
+      86	        return value
+      87	
+      88	    @field_validator("RELOAD", mode="before")
+      89	    @classmethod
+      90	    def _validate_reload(cls, v: bool | str) -> bool:
+      91	        if isinstance(v, str):
+      92	            val = v.lower()
+      93	            if val in ("1", "true", "yes"):
+      94	                return True
+      95	            if val in ("0", "false", "no"):
+      96	                return False
+      97	            raise ValueError("RELOAD must be a boolean (true/false)")
+      98	        return bool(v)
+      99	
+     100	
+     101	settings = Settings()
+     102	
+     103	# ---------------------------------------------------------------------------
+     104	# Debug helper – ``python -m firewall_agent.config`` pretty-prints the loaded settings
+     105	# ---------------------------------------------------------------------------
+     106	if __name__ == "__main__":  # pragma: no cover
+     107	    try:
+     108	        print(settings.model_dump_json(indent=2))
+     109	    except ValidationError as exc:
+     110	        print("🚨 Configuration error:", file=sys.stderr)
+     111	        print(exc, file=sys.stderr)
+     112	        sys.exit(1)
+
+------------------------------ firewall_agent/database.py ------------------------------
+       1	"""SQLAlchemy engine / session boilerplate."""
+       2	from sqlalchemy import create_engine
+       3	from sqlalchemy.orm import sessionmaker, declarative_base
+       4	
+       5	from .config import settings
+       6	
+       7	DATABASE_URL = f"sqlite:///{settings.DB_PATH}"
+       8	engine = create_engine(
+       9	    DATABASE_URL,
+      10	    connect_args={"check_same_thread": False},  # SQLite‑specific
+      11	)
+      12	
+      13	SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+      14	
+      15	Base = declarative_base()
+
+------------------------------ firewall_agent/dependencies.py ------------------------------
+       1	"""FastAPI dependency helpers – keep them centralised for easy overriding in tests."""
+       2	from __future__ import annotations
+       3	
+       4	from typing import Generator
+       5	
+       6	from fastapi import Depends  # re‑export for use in other modules
+       7	from sqlalchemy.orm import Session
+       8	
+       9	from .database import SessionLocal
+      10	from .backends import backend as _backend  # singleton
+      11	from .backends.base import FirewallBackend
+      12	from .clients.core import CoreClient
+      13	from .config import settings
+      14	
+      15	# ----------------------------- Database ---------------------------
+      16	
+      17	def get_db() -> Generator[Session, None, None]:
+      18	    db = SessionLocal()
+      19	    try:
+      20	        yield db
+      21	    finally:
+      22	        db.close()
+      23	
+      24	
+      25	# ----------------------------- Backend ---------------------------
+      26	
+      27	def get_backend() -> FirewallBackend:  # pragma: no cover
+      28	    return _backend
+      29	
+      30	
+      31	# ------------------------------ Core -----------------------------
+      32	
+      33	def get_core_client() -> CoreClient:  # pragma: no cover
+      34	    return CoreClient(str(settings.CORE_URL))
+
+------------------------------ firewall_agent/__init__.py ------------------------------
+       1	"""Package entry‑point – re‑export the FastAPI application."""
+       2	from .api import app  # noqa: F401  (re‑export for `uvicorn firewall_agent:app`)
+
+------------------------------ firewall_agent/models.py ------------------------------
+       1	"""ORM definitions – mirror local state for reverse‑proxies / aliases / rules."""
+       2	from sqlalchemy import Column, Integer, String, DateTime, func
+       3	from .database import Base, engine
+       4	
+       5	
+       6	class ReverseProxyDB(Base):
+       7	    __tablename__ = "reverse_proxies"
+       8	
+       9	    id = Column(String(36), primary_key=True, index=True)  # UUID
+      10	    name = Column(String, nullable=False)
+      11	    ip = Column(String, nullable=False)
+      12	    ports = Column(String, nullable=False)        # e.g. "80,443"
+      13	    allowed_ips = Column(String, nullable=False)  # comma‑separated CIDRs
+      14	
+      15	
+      16	class AliasDB(Base):
+      17	    __tablename__ = "aliases"
+      18	
+      19	    id = Column(String(36), primary_key=True, index=True)  # OPNsense UUID
+      20	    service_name = Column(String, nullable=False)
+      21	
+      22	
+      23	class RuleDB(Base):
+      24	    __tablename__ = "rules"
+      25	
+      26	    id = Column(Integer, primary_key=True, index=True)
+      27	    firewall_rule_uuid = Column(String, nullable=False, unique=True)
+      28	    action = Column(String, nullable=False)
+      29	    src_ip = Column(String, nullable=False)
+      30	    dest_alias_id = Column(String(36), nullable=False)
+      31	
+      32	
+      33	class AgentCredentials(Base):
+      34	    __tablename__ = "agent_credentials"
+      35	
+      36	    uuid = Column(String(36), primary_key=True, index=True)
+      37	    token = Column(String, nullable=False)
+      38	
+      39	    created_at = Column(
+      40	        DateTime(timezone=True),
+      41	        server_default=func.now(),
+      42	        nullable=False,
+      43	    )
+      44	    updated_at = Column(
+      45	        DateTime(timezone=True),
+      46	        server_default=func.now(),
+      47	        onupdate=func.now(),
+      48	        nullable=False,
+      49	    )
+      50	
+      51	
+      52	# Create tables on first import – SQLite is file‑based so safe for dev
+      53	Base.metadata.create_all(bind=engine)
+
+------------------------------ firewall_agent/schemas.py ------------------------------
+       1	"""Pydantic request / response models shared by API endpoints."""
+       2	from __future__ import annotations
+       3	
+       4	from typing import List
+       5	
+       6	from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validator
+       7	
+       8	
+       9	class ReverseProxyIn(BaseModel):
+      10	    uuid: str = Field(..., description="Client‑provided UUID")
+      11	    name: str
+      12	    ip: IPvAnyAddress
+      13	    ports: List[int] = Field(..., min_length=1)
+      14	    allowed_ips: List[str] = Field(..., min_length=1)
+      15	
+      16	    model_config = ConfigDict(from_attributes=True)
+      17	
+      18	    @field_validator("ports")
+      19	    @classmethod
+      20	    def _port_range(cls, v: List[int]) -> List[int]:
+      21	        for p in v:
+      22	            if not 1 <= p <= 65535:
+      23	                raise ValueError("Port must be between 1‑65535")
+      24	        return v
+      25	
+      26	
+      27	class ReverseProxyOut(BaseModel):
+      28	    id: str
+      29	
+      30	
+      31	class AliasIn(BaseModel):
+      32	    service_name: str
+      33	
+      34	
+      35	class AliasOut(BaseModel):
+      36	    id: str
+      37	    service_name: str
+      38	
+      39	    model_config = ConfigDict(from_attributes=True)
+      40	
+      41	
+      42	class RuleOut(BaseModel):
+      43	    id: int
+      44	    action: str
+      45	    src_ip: str
+      46	    service_name: str | None
+      47	
+      48	    model_config = ConfigDict(from_attributes=True)
+
+------------------------------ firewall_agent/services/sync.py ------------------------------
+       1	"""Business logic – reconcile remote firewall rules with local database and Core."""
+       2	from __future__ import annotations
+       3	
+       4	import logging
+       5	from typing import Dict, List, Tuple
+       6	
+       7	from sqlalchemy.orm import Session
+       8	
+       9	from ..backends import backend
+      10	from ..clients.core import CoreClient
+      11	from ..config import settings
+      12	from ..dependencies import get_db, get_core_client
+      13	from ..models import AliasDB, RuleDB
+      14	
+      15	
+      16	def _translate_action(raw_action: str) -> str:
+      17	    """Map raw OPNsense value → Core contract (pass/block)."""
+      18	    return settings.ACTION_MAP.get(raw_action, "block")
+      19	
+      20	
+      21	def _collect_remote(db: Session) -> Tuple[List[Dict], List[Dict]]:
+      22	    """Fetch remote rules and decide which ones to add/remove locally."""
+      23	    new_rules: List[Dict] = []
+      24	    removed_rules: List[Dict] = []
+      25	
+      26	    rows = backend.list_rules()
+      27	
+      28	    for row in rows:
+      29	        uuid_fw = row["uuid"]
+      30	        enabled = row["enabled"] == "1"
+      31	        details = backend.rule_details(uuid_fw)
+      32	
+      33	        raw_action = next(k for k, v in details["action"].items() if v["selected"] == 1)
+      34	        action = _translate_action(raw_action)
+      35	
+      36	        src_ip = details["source_net"]
+      37	        dest = details["destination_net"]
+      38	        if not dest.startswith(settings.PREFIX):
+      39	            continue  # not managed by Biforch
+      40	        service_name = dest[len(settings.PREFIX):]
+      41	
+      42	        alias = db.query(AliasDB).filter_by(service_name=service_name).first()
+      43	        if not alias:
+      44	            continue  # we do not know this service (yet)
+      45	
+      46	        existing = db.query(RuleDB).filter_by(firewall_rule_uuid=uuid_fw).first()
+      47	
+      48	        if enabled and not existing:
+      49	            db.add(
+      50	                RuleDB(
+      51	                    firewall_rule_uuid=uuid_fw,
+      52	                    action=action,
+      53	                    src_ip=src_ip,
+      54	                    dest_alias_id=alias.id,
+      55	                )
+      56	            )
+      57	            new_rules.append({
+      58	                "firewall_rule_uuid": uuid_fw,
+      59	                "action": action,
+      60	                "ip": src_ip,
+      61	                "service": service_name,
+      62	            })
+      63	        elif not enabled and existing:
+      64	            db.delete(existing)
+      65	            removed_rules.append({"firewall_rule_uuid": uuid_fw})
+      66	
+      67	    return new_rules, removed_rules
+      68	
+      69	
+      70	def sync_firewall() -> None:
+      71	    """High‑level sync: fetch → diff → commit → notify Core."""
+      72	    db: Session = next(get_db())  # type: ignore[arg-type]
+      73	    core: CoreClient = get_core_client()
+      74	    try:
+      75	        new_rules, removed_rules = _collect_remote(db)
+      76	        if new_rules or removed_rules:
+      77	            db.commit()
+      78	            logging.info("Firewall sync: +%s  -%s", len(new_rules), len(removed_rules))
+      79	            _notify_core(core, new_rules, removed_rules)
+      80	    except Exception as exc:  # noqa: BLE001
+      81	        logging.error("Firewall sync failed: %s", exc)
+      82	    finally:
+      83	        db.close()
+      84	
+      85	
+      86	def _notify_core(core: CoreClient, new_rules: List[Dict], removed_rules: List[Dict]) -> None:
+      87	    for rule in new_rules:
+      88	        try:
+      89	            core.create_rule(**rule)
+      90	        except Exception as exc:  # noqa: BLE001
+      91	            logging.warning("Failed to notify Core (create): %s", exc)
+      92	    for rule in removed_rules:
+      93	        try:
+      94	            core.delete_rule(rule["firewall_rule_uuid"])
+      95	        except Exception as exc:  # noqa: BLE001
+      96	            logging.warning("Failed to notify Core (delete): %s", exc)
+
+------------------------------ pyproject.toml ------------------------------
+       1	[tool.poetry]
+       2	name        = "biforch-firewall-agent"
+       3	version     = "0.1.0"
+       4	description = "Firewall agent for Biforch platform"
+       5	authors     = ["FallMaple <tony53517230@gmail.com>"]
+       6	license     = "MIT"
+       7	readme      = "README.md"
+       8	
+       9	packages = [
+      10	  { include = "firewall_agent" }
+      11	]
+      12	
+      13	[tool.poetry.dependencies]
+      14	python            = ">=3.11,<4.0"
+      15	fastapi           = "^0.110"
+      16	uvicorn           = { version = "^0.29", extras = ["standard"] }
+      17	requests          = "^2.32"
+      18	SQLAlchemy        = "^2.0"
+      19	pydantic          = "^2.7"
+      20	pydantic-settings = "^2.3"
+      21	typer = { version = "^0.9.0", extras = ["all"] }
+      22	
+      23	# ---------- Dev dependencies ----------
+      24	[tool.poetry.group.dev.dependencies]
+      25	pytest         = "^8.2"
+      26	pytest-cov     = "^5.0"
+      27	pytest-asyncio = "^0.23"
+      28	httpx          = "^0.27"
+      29	pytest-mock    = "^3.12"
+      30	factory-boy    = "^3.3"
+      31	freezegun      = "^1.4"
+      32	
+      33	# ---------- CLI entry ----------
+      34	[tool.poetry.scripts]
+      35	firewall-agent = "firewall_agent.api:run"
+      36	
+      37	# ---------- Build backend ----------
+      38	[build-system]
+      39	requires      = ["poetry-core>=1.8.0"]
+      40	build-backend = "poetry.core.masonry.api"
+
+------------------------------ README.md ------------------------------
+       1	# **Firewall Agent for Biforch Platform**
+       2	
+       3	A lightweight FastAPI service that synchronizes firewall rules from multiple firewall backends (e.g., OPNsense, pfSense, iptables) into the Biforch Core platform. It manages:
+       4	
+       5	* Reverse proxy registrations
+       6	* Alias creation and listing
+       7	* Rule monitoring and synchronization
+       8	
+       9	---
+      10	
+      11	## Table of Contents
+      12	
+      13	1. [Features](#features)
+      14	2. [Prerequisites](#prerequisites)
+      15	3. [Quickstart](#quickstart)
+      16	
+      17	   * [1. Clone Repository](#1-clone-repository)
+      18	   * [2. Environment Variables](#2-environment-variables)
+      19	   * [3. Development with Docker Compose](#3-development-with-docker-compose)
+      20	   * [4. Production Deployment](#4-production-deployment)
+      21	4. [Local Development Without Docker](#local-development-without-docker)
+      22	5. [Testing](#testing)
+      23	6. [API Reference](#api-reference)
+      24	7. [Environment Variables Reference](#environment-variables-reference)
+      25	8. [License](#license)
+      26	
+      27	---
+      28	
+      29	## Features
+      30	
+      31	* **Auto-sync**: Background thread polls OPNsense every 10 seconds and pushes changes to Biforch Core.
+      32	* **CRUD**: Create, list, and delete reverse proxies and aliases.
+      33	* **Rule Mapping**: Translates OPNsense rule actions (`pass` / `block` / `reject`) into Core contracts.
+      34	* **Extensible Backend**: Abstract firewall backend interface for swapping implementations (OPNsense supported out of the box).
+      35	
+      36	---
+      37	
+      38	## Prerequisites
+      39	
+      40	* Python 3.11+ (if running locally)
+      41	* Docker & Docker Compose (for containerized setups)
+      42	* An OPNsense instance with API access
+      43	* Biforch Core service URL and token
+      44	
+      45	---
+      46	
+      47	## Quickstart
+      48	
+      49	### 1. Clone Repository
+      50	
+      51	```bash
+      52	git clone <your-repo-url> biforch-firewall-agent
+      53	cd biforch-firewall-agent
+      54	```
+      55	
+      56	### 2. Environment Variables
+      57	
+      58	Copy `.env.example` to `.env` and fill in your values:
+      59	
+      60	```ini
+      61	PREFIX=Biforch_
+      62	API_KEY=<OPNSense_API_KEY>
+      63	API_SECRET=<OPNSense_API_SECRET>
+      64	REMOTE_URL=http://opnsense.local
+      65	CORE_URI=http://core.local:8001
+      66	TIMEOUT=15
+      67	DB_PATH=firewall.db
+      68	HOST=0.0.0.0
+      69	PORT=8000
+      70	RELOAD=true
+      71	```
+      72	
+      73	> Note: `CORE_URI` maps to `CORE_URL` in code.
+      74	
+      75	### 3. Development with Docker Compose
+      76	
+      77	Build and run the development environment (live reload, dev dependencies):
+      78	
+      79	```bash
+      80	docker compose -f docker-compose.dev.yml up --build
+      81	```
+      82	
+      83	* Source code is volume-mounted: changes reload the server.
+      84	* Access API at `http://localhost:8000`.
+      85	
+      86	### 4. Production Deployment
+      87	
+      88	Build and run production image (no dev dependencies, no reload):
+      89	
+      90	```bash
+      91	docker compose -f docker-compose.prod.yml up --build -d
+      92	```
+      93	
+      94	---
+      95	
+      96	## Local Development Without Docker
+      97	
+      98	1. Create a virtual environment:
+      99	
+     100	   ```bash
+     101	   python3.11 -m venv .venv
+     102	   source .venv/bin/activate
+     103	   ```
+     104	2. Install dependencies:
+     105	
+     106	   ```bash
+     107	   pip install --upgrade pip
+     108	   pip install poetry
+     109	   poetry install --with dev
+     110	   ```
+     111	3. Run the server:
+     112	
+     113	   ```bash
+     114	   uvicorn firewall_agent.api:app --host 0.0.0.0 --port 8000 --reload
+     115	   ```
+     116	
+     117	---
+     118	
+     119	## Testing
+     120	
+     121	Run the full test suite with coverage:
+     122	
+     123	```bash
+     124	pytest --cov
+     125	```
+     126	
+     127	---
+     128	
+     129	## API Reference
+     130	
+     131	### Reverse Proxies
+     132	
+     133	* **POST** `/reverse_proxies`
+     134	
+     135	  * Create a new reverse proxy.
+     136	  * Body: `uuid`, `name`, `ip`, `ports`, `allowed_ips`
+     137	* **GET** `/reverse_proxies`
+     138	
+     139	  * List all reverse proxies.
+     140	
+     141	### Aliases
+     142	
+     143	* **POST** `/aliases`
+     144	
+     145	  * Create a new service alias in OPNsense.
+     146	  * Body: `service_name`
+     147	* **GET** `/aliases`
+     148	
+     149	  * List all aliases.
+     150	
+     151	### Rules
+     152	
+     153	* **GET** `/rules`
+     154	
+     155	  * List all synchronized rules with `action`, `src_ip`, and mapped `service_name`.
+     156	
+     157	---
+     158	
+     159	## Environment Variables Reference
+     160	
+     161	| Variable    | Description                           | Default       |
+     162	| ----------- | ------------------------------------- | ------------- |
+     163	| PREFIX      | Alias prefix on OPNsense              | `Biforch_`    |
+     164	| API\_KEY    | OPNsense API key                      | **required**  |
+     165	| API\_SECRET | OPNsense API secret                   | **required**  |
+     166	| REMOTE\_URI | Base URL of OPNsense                  | **required**  |
+     167	| CORE\_URI   | Biforch Core service URL              | **required**  |
+     168	| TIMEOUT     | HTTP timeout (s)                      | `15`          |
+     169	| DB\_PATH    | SQLite database file path             | `firewall.db` |
+     170	| HOST        | Server bind address                   | `0.0.0.0`     |
+     171	| PORT        | Server port                           | `8000`        |
+     172	| RELOAD      | Enable auto-reload (development only) | `true`        |
+     173	
+     174	---
+     175	
+     176	## License
+     177	
+     178	This project is licensed under the MIT License.
+
+------------------------------ tests/test_firewall_agent.py ------------------------------
+       1	import itertools
+       2	import json
+       3	import threading
+       4	import time
+       5	from typing import Dict, Any
+       6	
+       7	import pytest
+       8	from fastapi.testclient import TestClient
+       9	from sqlalchemy import create_engine
+      10	from sqlalchemy.orm import sessionmaker
+      11	
+      12	import firewall_agent
+      13	from firewall_agent import (
+      14	    app,
+      15	    Base,
+      16	    RuleDB,
+      17	    AliasDB,
+      18	    ReverseProxyDB,
+      19	    PREFIX,
+      20	    create_opnsense_alias,
+      21	    sync_firewall_rules,
+      22	    monitor_firewall,
+      23	)
+      24	from fastapi import HTTPException
+      25	
+      26	# Predictable UUID generator for deterministic tests
+      27	_uuid_counter = itertools.count(1)
+      28	def fake_uuid(name: str) -> str:
+      29	    return f"uuid-{next(_uuid_counter)}-{name}"
+      30	
+      31	# Minimal fake HTTP Response
+      32	class FakeResp:
+      33	    def __init__(self, data: Dict[str, Any], status: int = 200):
+      34	        self._data = data
+      35	        self.status_code = status
+      36	        self.text = json.dumps(data)
+      37	
+      38	    def json(self):
+      39	        return self._data
+      40	
+      41	    def raise_for_status(self):
+      42	        if not (200 <= self.status_code < 300):
+      43	            raise Exception(f"HTTP {self.status_code}")
+      44	
+      45	# Test fixture: isolated DB and stub for alias creation
+      46	@pytest.fixture(autouse=True)
+      47	def client(tmp_path, monkeypatch):
+      48	    db_file = tmp_path / "test.db"
+      49	    engine = create_engine(f"sqlite:///{db_file}", connect_args={"check_same_thread": False})
+      50	    TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+      51	    Base.metadata.create_all(bind=engine)
+      52	    monkeypatch.setattr(firewall_agent, "engine", engine)
+      53	    monkeypatch.setattr(firewall_agent, "SessionLocal", TestingSession)
+      54	    monkeypatch.setattr(firewall_agent, "create_opnsense_alias", lambda svc: fake_uuid(svc))
+      55	    return TestClient(app)
+      56	
+      57	# create_opnsense_alias helper
+      58	def test_create_opnsense_alias_success(monkeypatch):
+      59	    called = {}
+      60	    def fake_post(url, auth=None, json=None, timeout=None):
+      61	        called['url'] = url
+      62	        called['json'] = json
+      63	        return FakeResp({"result": "saved", "uuid": "my-uuid"})
+      64	    monkeypatch.setattr(firewall_agent.requests, "post", fake_post)
+      65	    uid = create_opnsense_alias("svc")
+      66	    assert uid == "my-uuid"
+      67	    assert PREFIX in called['json']['alias']['name']
+      68	
+      69	def test_create_opnsense_alias_http_error(monkeypatch):
+      70	    monkeypatch.setattr(firewall_agent.requests, "post", lambda *a, **k: FakeResp({}, 500))
+      71	    with pytest.raises(HTTPException) as exc:
+      72	        create_opnsense_alias("svc")
+      73	    assert exc.value.status_code == 502
+      74	
+      75	def test_create_opnsense_alias_bad_payload(monkeypatch):
+      76	    monkeypatch.setattr(firewall_agent.requests, "post", lambda *a, **k: FakeResp({"result": "ok"}))
+      77	    with pytest.raises(HTTPException):
+      78	        create_opnsense_alias("svc")
+      79	
+      80	# Reverse-Proxy API CRUD and validation
+      81	def test_reverse_proxy_crud_and_validation(client):
+      82	    rp_uuid = fake_uuid("rp")
+      83	    valid_payload = {
+      84	        "uuid": rp_uuid,
+      85	        "name": "rp1",
+      86	        "ip": "1.2.3.4",
+      87	        "ports": [80, 443],
+      88	        "allowed_ips": ["0.0.0.0/0"],
+      89	    }
+      90	
+      91	    resp = client.post("/reverse_proxies", json=valid_payload)
+      92	    assert resp.status_code == 200
+      93	
+      94	    resp = client.post("/reverse_proxies", json=valid_payload)
+      95	    assert resp.status_code == 400
+      96	
+      97	    invalid_cases = [
+      98	        {"name": None},
+      99	        {"ip": "bad"},
+     100	        {"ports": []},
+     101	        {"allowed_ips": []},
+     102	    ]
+     103	    for override in invalid_cases:
+     104	        payload = {**valid_payload, "uuid": fake_uuid("rp"), **override}
+     105	        r = client.post("/reverse_proxies", json=payload)
+     106	        assert r.status_code == 422
+     107	
+     108	    assert client.put("/reverse_proxies/notfound", json=valid_payload).status_code == 404
+     109	
+     110	    updated_payload = {**valid_payload, "name": "rp2", "ip": "2.2.2.2", "ports": [8080], "allowed_ips": ["10.0.0.0/8"]}
+     111	    r = client.put(f"/reverse_proxies/{rp_uuid}", json=updated_payload)
+     112	    assert r.status_code == 200
+     113	    rp = client.get("/reverse_proxies").json()[0]
+     114	    assert rp["name"] == "rp2"
+     115	
+     116	    assert client.delete("/reverse_proxies/none").status_code == 404
+     117	
+     118	    assert client.delete(f"/reverse_proxies/{rp_uuid}").status_code == 200
+     119	    assert client.get("/reverse_proxies").json() == []
+     120	
+     121	# ReverseProxy serializer: cover field_serializer for ports and allowed_ips
+     122	def test_reverseproxy_serializer_ports_and_ips():
+     123	    from firewall_agent import ReverseProxy
+     124	    model = ReverseProxy(
+     125	        uuid="abc-123",
+     126	        name="rp",
+     127	        ip="1.2.3.4",
+     128	        ports=[80, 443],
+     129	        allowed_ips=["10.0.0.0/24"]
+     130	    )
+     131	    json_str = model.model_dump_json()
+     132	    data = json.loads(json_str)
+     133	    assert data["ports"] == [80, 443]
+     134	    assert data["allowed_ips"] == ["10.0.0.0/24"]
+     135	
+     136	# Alias CRUD and validation
+     137	def test_alias_missing_field_and_errors(client):
+     138	    assert client.post("/aliases", json={}).status_code == 422
+     139	    assert client.put("/aliases/none", json={"service_name": "x"}).status_code == 404
+     140	    assert client.delete("/aliases/none").status_code == 404
+     141	
+     142	def test_alias_crud(client):
+     143	    r = client.post("/aliases", json={"service_name": "foo"})
+     144	    aid = r.json()["id"]
+     145	    assert any(a["id"] == aid for a in client.get("/aliases").json())
+     146	    r = client.put(f"/aliases/{aid}", json={"service_name": "bar"})
+     147	    assert r.status_code == 200
+     148	    assert any(a["service_name"] == "bar" for a in client.get("/aliases").json())
+     149	    r = client.delete(f"/aliases/{aid}")
+     150	    assert r.status_code == 200
+     151	    assert all(a["id"] != aid for a in client.get("/aliases").json())
+     152	
+     153	# Rules listing and hash behavior
+     154	def test_rules_and_hash_empty(client):
+     155	    assert client.get("/rules").json() == []
+     156	    assert isinstance(client.get("/rules/hash").json()["hash"], int)
+     157	
+     158	def test_rules_list_with_missing_alias(client):
+     159	    db = firewall_agent.SessionLocal()
+     160	    db.add(RuleDB(
+     161	        firewall_rule_uuid="fw-missing-1",
+     162	        action="pass",
+     163	        src_ip="1.1.1.1",
+     164	        dest_alias_id="missing"
+     165	    ))
+     166	    db.commit(); db.close()
+     167	    r = client.get("/rules").json()
+     168	    assert r and r[0]["service_name"] is None
+     169	
+     170	def test_rules_hash_changes_and_order(client):
+     171	    db = firewall_agent.SessionLocal()
+     172	    db.query(RuleDB).delete()
+     173	    for idx, ip in enumerate(["1.1.1.1", "2.2.2.2"], start=1):
+     174	        db.add(RuleDB(
+     175	            firewall_rule_uuid=f"fw-{idx}",
+     176	            action="pass",
+     177	            src_ip=ip,
+     178	            dest_alias_id="none"
+     179	        ))
+     180	    db.commit(); db.close()
+     181	    h1 = client.get("/rules/hash").json()["hash"]
+     182	
+     183	    db = firewall_agent.SessionLocal()
+     184	    db.query(RuleDB).delete()
+     185	    for idx, ip in enumerate(["2.2.2.2", "1.1.1.1"], start=1):
+     186	        db.add(RuleDB(
+     187	            firewall_rule_uuid=f"fw-{idx}",
+     188	            action="pass",
+     189	            src_ip=ip,
+     190	            dest_alias_id="none"
+     191	        ))
+     192	    db.commit(); db.close()
+     193	    h2 = client.get("/rules/hash").json()["hash"]
+     194	    assert h1 == h2
+     195	
+     196	# sync_firewall_rules: coverage tests for all branches
+     197	def test_sync_ignores_non_prefixed_dest(client, monkeypatch):
+     198	    monkeypatch.setattr(firewall_agent.requests, "get",
+     199	        lambda url, **k:
+     200	            FakeResp({"rows":[{"uuid":"u1","enabled":"1"}]})
+     201	            if "search_rule" in url
+     202	            else FakeResp({"rule":{"action":{"pass":{"selected":1}},"source_net":"1.1.1.1","destination_net":"no-prefix"}})
+     203	    )
+     204	    sync_firewall_rules()
+     205	
+     206	def test_sync_skips_when_alias_not_found(client, monkeypatch):
+     207	    monkeypatch.setattr(firewall_agent.requests, "get",
+     208	        lambda url, **k:
+     209	            FakeResp({"rows":[{"uuid":"u1","enabled":"1"}]})
+     210	            if "search_rule" in url
+     211	            else FakeResp({"rule":{"action":{"pass":{"selected":1}},"source_net":"1.1.1.1","destination_net":f"{PREFIX}noexist"}})
+     212	    )
+     213	    sync_firewall_rules()
+     214	
+     215	def test_sync_inserts_new_rule(client, monkeypatch):
+     216	    client.post("/aliases", json={"service_name": "svc"})
+     217	    monkeypatch.setattr(firewall_agent.requests, "get",
+     218	        lambda url, **k:
+     219	            FakeResp({"rows":[{"uuid":"u1","enabled":"1"}]})
+     220	            if "search_rule" in url
+     221	            else FakeResp({"rule":{"action":{"block":{"selected":1}},"source_net":"5.5.5.5","destination_net":f"{PREFIX}svc"}})
+     222	    )
+     223	    sync_firewall_rules()
+     224	    assert any(r["src_ip"] == "5.5.5.5" for r in client.get("/rules").json())
+     225	
+     226	def test_sync_deletes_disabled_rule(client, monkeypatch):
+     227	    client.post("/aliases", json={"service_name": "svc"})
+     228	    db = firewall_agent.SessionLocal()
+     229	    alias = db.query(AliasDB).filter_by(service_name="svc").first()
+     230	    db.add(RuleDB(
+     231	        firewall_rule_uuid="u1",
+     232	        action="pass",
+     233	        src_ip="6.6.6.6",
+     234	        dest_alias_id=alias.id
+     235	    ))
+     236	    db.commit(); db.close()
+     237	
+     238	    monkeypatch.setattr(firewall_agent.requests, "get",
+     239	        lambda url, **k:
+     240	            FakeResp({"rows":[{"uuid":"u1","enabled":"0"}]})
+     241	            if "search_rule" in url
+     242	            else FakeResp({"rule":{"action":{"pass":{"selected":1}},"source_net":"6.6.6.6","destination_net":f"{PREFIX}svc"}})
+     243	    )
+     244	    sync_firewall_rules()
+     245	    assert all(r["src_ip"] != "6.6.6.6" for r in client.get("/rules").json())
+     246	
+     247	def test_sync_handles_exception(monkeypatch):
+     248	    monkeypatch.setattr(firewall_agent.requests, "get", lambda *a, **k: (_ for _ in ()).throw(Exception("fail")))
+     249	    sync_firewall_rules()
+     250	
+     251	# monitor_firewall and __main__ entrypoint
+     252	def test_monitor_firewall_runs(monkeypatch):
+     253	    calls = []
+     254	    monkeypatch.setattr(firewall_agent, "sync_firewall_rules", lambda: calls.append(1))
+     255	    stop_event = threading.Event()
+     256	    t = threading.Thread(target=monitor_firewall, kwargs={"interval": 0.01, "stop_event": stop_event})
+     257	    t.start()
+     258	    time.sleep(0.05)
+     259	    stop_event.set()
+     260	    t.join()
+     261	    assert len(calls) >= 2
+
+============================== DONE ==============================

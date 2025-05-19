@@ -1,5 +1,4 @@
 import os
-from typing import Dict
 from dotenv import load_dotenv
 
 # Load environment variables from .env file once
@@ -24,21 +23,9 @@ def get_env_int(name: str) -> int:
     try:
         return int(val_str)
     except ValueError:
-        raise RuntimeError(
-            f"Environment variable '{name}' must be an integer, got '{val_str}'")
-
+        raise RuntimeError(f"Environment variable '{name}' must be an integer, got '{val_str}'")
 
 # Required configuration variables
-
-PREFIX = get_env_str("PREFIX")
-API_KEY = get_env_str("API_KEY")
-API_SECRET = get_env_str("API_SECRET")
-REMOTE_URL = get_env_str("REMOTE_URL")
-CORE_URL = get_env_str("CORE_URL")
+DB_PATH = get_env_str("DB_PATH")
 TIMEOUT = get_env_int("TIMEOUT")
-DB_PATH = get_env_str("DB_PATH")  # local SQLite path constant
-ACTION_MAP: Dict[str, str] = {
-    "pass": "pass",
-    "block": "block",
-    "reject": "block",
-}
+ADMIN_TOKEN = get_env_str("ADMIN_TOKEN")

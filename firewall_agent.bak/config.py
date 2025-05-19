@@ -33,8 +33,8 @@ def get_env_int(name: str) -> int:
 PREFIX = get_env_str("PREFIX")
 API_KEY = get_env_str("API_KEY")
 API_SECRET = get_env_str("API_SECRET")
-REMOTE_URL = get_env_str("REMOTE_URL")
-CORE_URL = get_env_str("CORE_URL")
+REMOTE_URI = get_env_str("REMOTE_URI")
+CORE_URI = get_env_str("CORE_URI")
 TIMEOUT = get_env_int("TIMEOUT")
 DB_PATH = get_env_str("DB_PATH")  # local SQLite path constant
 ACTION_MAP: Dict[str, str] = {

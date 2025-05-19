@@ -1,0 +1,4041 @@
+============================== PROJECT TREE ==============================
+.
+├── config.py
+├── .env
+├── firewall_agent.py
+├── firewall_rules.json
+├── test.py
+├── test_responses
+│   ├── alias_add_item.json
+│   ├── alias_get.json
+│   ├── firewall_rules.json
+│   └── output.json
+└── tests
+    └── test_firewall_agent.py
+
+3 directories, 10 files
+
+============================ FILE CONTENTS ==============================
+------------------------------ config.py ------------------------------
+       1	import os
+       2	from typing import Dict
+       3	from dotenv import load_dotenv
+       4	
+       5	# Load environment variables from .env file once
+       6	load_dotenv()
+       7	
+       8	
+       9	def get_env_str(name: str) -> str:
+      10	    """
+      11	    Retrieve an environment variable or raise an error if missing.
+      12	    """
+      13	    value = os.getenv(name)
+      14	    if not value:
+      15	        raise RuntimeError(f"Environment variable '{name}' must be set")
+      16	    return value
+      17	
+      18	
+      19	def get_env_int(name: str) -> int:
+      20	    """
+      21	    Retrieve an environment variable as int or raise error if missing/invalid.
+      22	    """
+      23	    val_str = get_env_str(name)
+      24	    try:
+      25	        return int(val_str)
+      26	    except ValueError:
+      27	        raise RuntimeError(
+      28	            f"Environment variable '{name}' must be an integer, got '{val_str}'")
+      29	
+      30	
+      31	# Required configuration variables
+      32	
+      33	PREFIX = get_env_str("PREFIX")
+      34	API_KEY = get_env_str("API_KEY")
+      35	API_SECRET = get_env_str("API_SECRET")
+      36	REMOTE_URI = get_env_str("REMOTE_URI")
+      37	CORE_URI = get_env_str("CORE_URI")
+      38	TIMEOUT = get_env_int("TIMEOUT")
+      39	DB_PATH = get_env_str("DB_PATH")  # local SQLite path constant
+      40	ACTION_MAP: Dict[str, str] = {
+      41	    "pass": "pass",
+      42	    "block": "block",
+      43	    "reject": "block",
+      44	}
+
+------------------------------ .env ------------------------------
+       1	PREFIX=Biforch_
+       2	API_KEY=7beKiNep5x7bS8G4Wjqb1G3Sk/6uMs+yH1J9p58cGJSUOf5zGW8qloEcfT4AqR9YMMGASP3Sn0l5Y7gc
+       3	API_SECRET=S8kU5NcxtFkBuAl2PcNv8C+luxsg1CaukIT/uQGU1VGMhf4b0C0ticcRZrsRcDfJSQ7T7ZEghkdpy8E/
+       4	REMOTE_URI=http://192.168.87.1
+       5	CORE_URI=http://192.168.87.10:8001
+       6	TIMEOUT=15
+       7	DB_PATH=firewall.db
+
+------------------------------ firewall_agent.py ------------------------------
+       1	"""
+       2	# firewall_agent.py
+       3	FastAPI service + background sync for Biforch firewall rules.
+       4	
+       5	* All constants are imported from **config.py**.
+       6	* **Reverse-Proxy registration**
+       7	  - `uuid` (primary-key)
+       8	  - `name`
+       9	  - `ip`
+      10	  - **ports: List[int]**   ← NEW (accept multiple ports)
+      11	  - **allowed_ips: List[str]** ← NEW (CIDR or IP ranges)
+      12	"""
+      13	from __future__ import annotations
+      14	
+      15	import logging
+      16	import threading
+      17	import time
+      18	from typing import Dict, List, Optional, Tuple
+      19	
+      20	import requests
+      21	from fastapi import FastAPI, HTTPException
+      22	from pydantic import BaseModel, ConfigDict, Field, field_serializer, IPvAnyAddress
+      23	from sqlalchemy import Column, Integer, String, create_engine
+      24	from sqlalchemy.orm import declarative_base, sessionmaker
+      25	
+      26	# ---------------------------------------------------------------------------
+      27	# Central configuration (imported from your project’s config.py)
+      28	# ---------------------------------------------------------------------------
+      29	from config import (  # type: ignore
+      30	    PREFIX,
+      31	    API_KEY,
+      32	    API_SECRET,
+      33	    REMOTE_URI,
+      34	    CORE_URI,
+      35	    TIMEOUT,
+      36	    DB_PATH,
+      37	    ACTION_MAP,
+      38	)
+      39	
+      40	# ---------------------------------------------------------------------------
+      41	# Database
+      42	# ---------------------------------------------------------------------------
+      43	DATABASE_URL = f"sqlite:///./{DB_PATH}"
+      44	engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+      45	SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+      46	Base = declarative_base()
+      47	
+      48	
+      49	# ---------------------------------------------------------------------------
+      50	# ORM models
+      51	# ---------------------------------------------------------------------------
+      52	class ReverseProxyDB(Base):
+      53	    """Registered reverse-proxy (uuid = primary-key)."""
+      54	    __tablename__ = "reverse_proxies"
+      55	
+      56	    id = Column(String(36), primary_key=True, index=True)  # uuid
+      57	    name = Column(String, nullable=False)
+      58	    ip = Column(String, nullable=False)
+      59	    ports = Column(String, nullable=False)       # stored as "80,443"
+      60	    allowed_ips = Column(String, nullable=False)  # stored as "10.0.0.0/24,192.168.1.0/24"
+      61	
+      62	
+      63	class AliasDB(Base):
+      64	    __tablename__ = "aliases"
+      65	
+      66	    id = Column(String(36), primary_key=True, index=True)  # uuid from OPNsense
+      67	    service_name = Column(String, nullable=False)
+      68	
+      69	
+      70	class RuleDB(Base):
+      71	    __tablename__ = "rules"
+      72	
+      73	    id = Column(Integer, primary_key=True, index=True)
+      74	    firewall_rule_uuid = Column(String, nullable=False, unique=True)
+      75	    action = Column(String, nullable=False)
+      76	    src_ip = Column(String, nullable=False)
+      77	    dest_alias_id = Column(String(36), nullable=False)
+      78	
+      79	
+      80	Base.metadata.create_all(bind=engine)
+      81	
+      82	
+      83	# ---------------------------------------------------------------------------
+      84	# Schemas
+      85	# ---------------------------------------------------------------------------
+      86	class ReverseProxy(BaseModel):
+      87	    uuid: str = Field(..., description="caller-provided UUID")
+      88	    name: str = Field(..., description="reverse-proxy name")
+      89	    ip: IPvAnyAddress = Field(..., description="reverse-proxy IP address")
+      90	    ports: list[int] = Field(..., description="list of exposed ports", min_length=1)
+      91	    allowed_ips: list[str] = Field(..., description="allowed source IP ranges", min_length=1)
+      92	
+      93	    @field_serializer("ports", when_used="json")
+      94	    def _serialize_ports(self, v: List[int]) -> List[int]:
+      95	        return v
+      96	
+      97	    @field_serializer("allowed_ips", when_used="json")
+      98	    def _serialize_allowed(self, v: List[str]) -> List[str]:
+      99	        return v
+     100	
+     101	    model_config = ConfigDict(from_attributes=True)
+     102	
+     103	
+     104	class Alias(BaseModel):
+     105	    service_name: str
+     106	    model_config = ConfigDict(from_attributes=True)
+     107	
+     108	
+     109	class Rule(BaseModel):
+     110	    action: str
+     111	    src_ip: str
+     112	    dest_alias_id: str
+     113	    model_config = ConfigDict(from_attributes=True)
+     114	
+     115	
+     116	# ---------------------------------------------------------------------------
+     117	# FastAPI app
+     118	# ---------------------------------------------------------------------------
+     119	app = FastAPI()
+     120	
+     121	
+     122	# ---------------------------------------------------------------------------
+     123	# Helper – OPNsense alias creation
+     124	# ---------------------------------------------------------------------------
+     125	def create_opnsense_alias(name: str) -> str:
+     126	    payload = {"alias": {"enabled": "1", "name": f"{PREFIX}{name}", "type": "host"}}
+     127	    resp = requests.post(
+     128	        f"{REMOTE_URI}/api/firewall/alias/add_item",
+     129	        auth=(API_KEY, API_SECRET),
+     130	        json=payload,
+     131	        timeout=TIMEOUT,
+     132	    )
+     133	    if resp.status_code != 200:
+     134	        raise HTTPException(502, f"OPNsense error: {resp.text}")
+     135	    data: Dict[str, str] = resp.json()
+     136	    if data.get("result") != "saved" or not data.get("uuid"):
+     137	        raise HTTPException(502, "Failed to create alias on OPNsense")
+     138	    return data["uuid"]
+     139	
+     140	
+     141	# ---------------------------------------------------------------------------
+     142	# Reverse-Proxy endpoints
+     143	# ---------------------------------------------------------------------------
+     144	@app.get("/reverse_proxies")
+     145	def list_reverse_proxies():
+     146	    db = SessionLocal()
+     147	    records = db.query(ReverseProxyDB).all()
+     148	    res = []
+     149	    for p in records:
+     150	        res.append({
+     151	            "id": p.id,
+     152	            "name": p.name,
+     153	            "ip": p.ip,
+     154	            "ports": list(map(int, p.ports.split(','))),
+     155	            "allowed_ips": p.allowed_ips.split(','),
+     156	        })
+     157	    db.close()
+     158	    return res
+     159	
+     160	
+     161	@app.post("/reverse_proxies")
+     162	def create_reverse_proxy(proxy: ReverseProxy):
+     163	    db = SessionLocal()
+     164	    if db.get(ReverseProxyDB, proxy.uuid):
+     165	        db.close()
+     166	        raise HTTPException(400, "uuid already registered")
+     167	    obj = ReverseProxyDB(
+     168	        id=proxy.uuid,
+     169	        name=proxy.name,
+     170	        ip=str(proxy.ip),
+     171	        ports=",".join(map(str, proxy.ports)),
+     172	        allowed_ips=",".join(proxy.allowed_ips),
+     173	    )
+     174	    db.add(obj)
+     175	    db.commit()
+     176	    db.refresh(obj)
+     177	    db.close()
+     178	    return {"id": obj.id}
+     179	
+     180	
+     181	@app.put("/reverse_proxies/{rp_id}")
+     182	def update_reverse_proxy(rp_id: str, proxy: ReverseProxy):
+     183	    db = SessionLocal()
+     184	    obj = db.get(ReverseProxyDB, rp_id)
+     185	    if not obj:
+     186	        db.close()
+     187	        raise HTTPException(404, "Reverse proxy not found")
+     188	    obj.name = proxy.name
+     189	    obj.ip = str(proxy.ip)
+     190	    obj.ports = ",".join(map(str, proxy.ports))
+     191	    obj.allowed_ips = ",".join(proxy.allowed_ips)
+     192	    db.commit()
+     193	    db.refresh(obj)
+     194	    db.close()
+     195	    return {"id": obj.id}
+     196	
+     197	
+     198	@app.delete("/reverse_proxies/{rp_id}")
+     199	def delete_reverse_proxy(rp_id: str):
+     200	    db = SessionLocal()
+     201	    obj = db.get(ReverseProxyDB, rp_id)
+     202	    if not obj:
+     203	        db.close()
+     204	        raise HTTPException(404, "Reverse proxy not found")
+     205	    db.delete(obj)
+     206	    db.commit()
+     207	    db.close()
+     208	    return {}
+     209	
+     210	
+     211	# ---------------------------------------------------------------------------
+     212	# Alias endpoints
+     213	# ---------------------------------------------------------------------------
+     214	@app.get("/aliases")
+     215	def list_aliases():
+     216	    db = SessionLocal()
+     217	    aliases = db.query(AliasDB).all()
+     218	    res = [{"id": a.id, "service_name": a.service_name} for a in aliases]
+     219	    db.close()
+     220	    return res
+     221	
+     222	
+     223	@app.post("/aliases")
+     224	def create_alias(alias: Alias):
+     225	    alias_uuid = create_opnsense_alias(alias.service_name)
+     226	    db = SessionLocal()
+     227	    obj = AliasDB(id=alias_uuid, service_name=alias.service_name)
+     228	    db.add(obj)
+     229	    db.commit()
+     230	    db.close()
+     231	    return {"id": alias_uuid}
+     232	
+     233	
+     234	@app.put("/aliases/{alias_id}")
+     235	def update_alias(alias_id: str, alias: Alias):
+     236	    db = SessionLocal()
+     237	    obj = db.get(AliasDB, alias_id)
+     238	    if not obj:
+     239	        db.close()
+     240	        raise HTTPException(404, "Alias not found")
+     241	    obj.service_name = alias.service_name
+     242	    db.commit()
+     243	    db.refresh(obj)
+     244	    db.close()
+     245	    return {"id": obj.id}
+     246	
+     247	
+     248	@app.delete("/aliases/{alias_id}")
+     249	def delete_alias(alias_id: str):
+     250	    db = SessionLocal()
+     251	    obj = db.get(AliasDB, alias_id)
+     252	    if not obj:
+     253	        db.close()
+     254	        raise HTTPException(404, "Alias not found")
+     255	    db.delete(obj)
+     256	    db.commit()
+     257	    db.close()
+     258	    return {}
+     259	
+     260	
+     261	# ---------------------------------------------------------------------------
+     262	# Rule endpoints
+     263	# ---------------------------------------------------------------------------
+     264	@app.get("/rules")
+     265	def list_rules():
+     266	    db = SessionLocal()
+     267	    rules = db.query(RuleDB).all()
+     268	    res = []
+     269	    for r in rules:
+     270	        alias_obj = db.get(AliasDB, r.dest_alias_id)
+     271	        res.append({
+     272	            "id": r.id,
+     273	            "action": r.action,
+     274	            "src_ip": r.src_ip,
+     275	            "service_name": alias_obj.service_name if alias_obj else None,
+     276	        })
+     277	    db.close()
+     278	    return res
+     279	
+     280	
+     281	@app.get("/rules/hash")
+     282	def rules_hash():
+     283	    db = SessionLocal()
+     284	    rules = db.query(RuleDB).all()
+     285	    items: List[Tuple[str, str, Optional[str]]] = []
+     286	    for r in rules:
+     287	        alias_obj = db.get(AliasDB, r.dest_alias_id)
+     288	        items.append((
+     289	            r.action,
+     290	            r.src_ip,
+     291	            alias_obj.service_name if alias_obj else None,
+     292	        ))
+     293	    db.close()
+     294	    return {"hash": hash(tuple(sorted(items)))}
+     295	
+     296	
+     297	# ---------------------------------------------------------------------------
+     298	# Firewall sync logic
+     299	# ---------------------------------------------------------------------------
+     300	def fetch_firewall_data() -> list[dict]:
+     301	    resp = requests.get(
+     302	        f"{REMOTE_URI}/api/firewall/filter/search_rule",
+     303	        auth=(API_KEY, API_SECRET),
+     304	        timeout=TIMEOUT,
+     305	    )
+     306	    resp.raise_for_status()
+     307	    with open("firewall_rules.json", "w", encoding="utf-8") as fp:
+     308	        fp.write(resp.text)
+     309	    return resp.json().get("rows", [])
+     310	
+     311	
+     312	def process_rules(rows: list[dict], db) -> tuple[list[dict], list[dict]]:
+     313	    new_rules: list[dict] = []
+     314	    removed_rules: list[dict] = []
+     315	
+     316	    for row in rows:
+     317	        uuid_fw = row["uuid"]
+     318	        detail = requests.get(
+     319	            f"{REMOTE_URI}/api/firewall/filter/get_rule/{uuid_fw}",
+     320	            auth=(API_KEY, API_SECRET),
+     321	            timeout=TIMEOUT,
+     322	        ).json()["rule"]
+     323	
+     324	        raw_action = next(a for a, v in detail["action"].items() if v["selected"] == 1)
+     325	        action = ACTION_MAP.get(raw_action, "block")
+     326	
+     327	        src_ip = detail["source_net"]
+     328	        dest = detail["destination_net"]
+     329	        if not dest.startswith(PREFIX):
+     330	            continue
+     331	        svc = dest[len(PREFIX):]
+     332	
+     333	        alias_obj = db.query(AliasDB).filter_by(service_name=svc).first()
+     334	        if not alias_obj:
+     335	            continue
+     336	
+     337	        existing = db.query(RuleDB).filter_by(firewall_rule_uuid=uuid_fw).first()
+     338	
+     339	        if row["enabled"] == "1" and not existing:
+     340	            db_rule = RuleDB(
+     341	                firewall_rule_uuid=uuid_fw,
+     342	                action=action,
+     343	                src_ip=src_ip,
+     344	                dest_alias_id=alias_obj.id,
+     345	            )
+     346	            db.add(db_rule)
+     347	            new_rules.append({
+     348	                "firewall_uuid": uuid_fw,
+     349	                "action": action,
+     350	                "ip": src_ip,
+     351	                "service": svc,
+     352	            })
+     353	        elif row["enabled"] != "1" and existing:
+     354	            removed_rules.append({"firewall_uuid": uuid_fw})
+     355	            db.delete(existing)
+     356	
+     357	    return new_rules, removed_rules
+     358	
+     359	
+     360	def notify_core(new_rules: list[dict], removed_rules: list[dict]) -> None:
+     361	    for rule in new_rules:
+     362	        try:
+     363	            requests.post(f"{CORE_URI}/rules", json=rule, timeout=TIMEOUT)
+     364	        except Exception as exc:
+     365	            logging.warning("Failed to notify core of rule creation: %s", exc)
+     366	
+     367	    for rule in removed_rules:
+     368	        try:
+     369	            requests.delete(f"{CORE_URI}/rules/firewall/{rule['firewall_uuid']}", timeout=TIMEOUT)
+     370	        except Exception as exc:
+     371	            logging.warning("Failed to notify core of rule deletion: %s", exc)
+     372	
+     373	
+     374	def sync_firewall_rules():
+     375	    try:
+     376	        rows = fetch_firewall_data()
+     377	        db = SessionLocal()
+     378	        new_rules, removed_rules = process_rules(rows, db)
+     379	
+     380	        if new_rules or removed_rules:
+     381	            db.commit()
+     382	            logging.info("Sync completed: +%s / -%s", len(new_rules), len(removed_rules))
+     383	            notify_core(new_rules, removed_rules)
+     384	
+     385	        db.close()
+     386	    except Exception as exc:
+     387	        logging.error("Sync error: %s", exc)
+     388	
+     389	
+     390	def monitor_firewall(interval: int = 10, stop_event: Optional[threading.Event] = None):
+     391	    while not (stop_event and stop_event.is_set()):
+     392	        sync_firewall_rules()
+     393	        time.sleep(interval)
+     394	
+     395	
+     396	if __name__ == "__main__":  # pragma: no cover
+     397	    logging.basicConfig(level=logging.INFO)
+     398	    stop_event = threading.Event()
+     399	    threading.Thread(target=monitor_firewall, args=(10, stop_event), daemon=True).start()
+     400	    import uvicorn
+     401	    uvicorn.run("firewall_agent:app", host="0.0.0.0", port=8000, reload=True)
+
+------------------------------ firewall_rules.json ------------------------------
+       1	{"rows":[],"rowCount":0,"total":0,"current":1}
+
+------------------------------ test.py ------------------------------
+       1	#!/usr/bin/env python3
+       2	"""
+       3	fetch_firewall_rules.py
+       4	
+       5	Standalone script to retrieve firewall rules from the OPNsense API
+       6	and save the response to firewall_rules.json.
+       7	"""
+       8	
+       9	import json
+      10	import logging
+      11	import sys
+      12	
+      13	import requests
+      14	
+      15	# Import your configuration values
+      16	from config import REMOTE_URI, API_KEY, API_SECRET, TIMEOUT
+      17	
+      18	def fetch_and_save_rules(output_path: str = "firewall_rules.json") -> None:
+      19	    """
+      20	    Fetch the list of firewall rules via the OPNsense API and save to a JSON file.
+      21	    """
+      22	    url = f"{REMOTE_URI}/api/firewall/filter/search_rule"
+      23	    try:
+      24	        resp = requests.get(
+      25	            url,
+      26	            auth=(API_KEY, API_SECRET),
+      27	            timeout=TIMEOUT,
+      28	        )
+      29	        resp.raise_for_status()
+      30	    except Exception as exc:
+      31	        logging.error("Failed to fetch firewall rules: %s", exc)
+      32	        sys.exit(1)
+      33	
+      34	    try:
+      35	        data = resp.json()
+      36	    except ValueError as exc:
+      37	        logging.error("Response is not valid JSON: %s", exc)
+      38	        sys.exit(1)
+      39	
+      40	    with open(output_path, "w", encoding="utf-8") as fp:
+      41	        json.dump(data, fp, ensure_ascii=False, indent=2)
+      42	    print(f"Firewall rules written to {output_path}")
+      43	
+      44	if __name__ == "__main__":
+      45	    logging.basicConfig(level=logging.INFO)
+      46	    fetch_and_save_rules()
+
+------------------------------ test_responses/alias_add_item.json ------------------------------
+       1	{
+       2	    "result": "failed",
+       3	    "validations": {
+       4	        "alias.name": "An alias with this name already exists."
+       5	    }
+       6	}
+
+------------------------------ test_responses/alias_get.json ------------------------------
+       1	{
+       2	    "alias": {
+       3	        "geoip": {
+       4	            "url": ""
+       5	        },
+       6	        "aliases": {
+       7	            "alias": {
+       8	                "e3c39558-68fd-4cf6-805a-5ba212bddb13": {
+       9	                    "enabled": "1",
+      10	                    "name": "Biforch_memos",
+      11	                    "type": {
+      12	                        "host": {
+      13	                            "value": "Host(s)",
+      14	                            "selected": 1
+      15	                        },
+      16	                        "network": {
+      17	                            "value": "Network(s)",
+      18	                            "selected": 0
+      19	                        },
+      20	                        "port": {
+      21	                            "value": "Port(s)",
+      22	                            "selected": 0
+      23	                        },
+      24	                        "url": {
+      25	                            "value": "URL (IPs)",
+      26	                            "selected": 0
+      27	                        },
+      28	                        "urltable": {
+      29	                            "value": "URL Table (IPs)",
+      30	                            "selected": 0
+      31	                        },
+      32	                        "urljson": {
+      33	                            "value": "URL Table in JSON format (IPs)",
+      34	                            "selected": 0
+      35	                        },
+      36	                        "geoip": {
+      37	                            "value": "GeoIP",
+      38	                            "selected": 0
+      39	                        },
+      40	                        "networkgroup": {
+      41	                            "value": "Network group",
+      42	                            "selected": 0
+      43	                        },
+      44	                        "mac": {
+      45	                            "value": "MAC address",
+      46	                            "selected": 0
+      47	                        },
+      48	                        "asn": {
+      49	                            "value": "BGP ASN",
+      50	                            "selected": 0
+      51	                        },
+      52	                        "dynipv6host": {
+      53	                            "value": "Dynamic IPv6 Host",
+      54	                            "selected": 0
+      55	                        },
+      56	                        "authgroup": {
+      57	                            "value": "OpenVPN group",
+      58	                            "selected": 0
+      59	                        },
+      60	                        "internal": {
+      61	                            "value": "Internal (automatic)",
+      62	                            "selected": 0
+      63	                        },
+      64	                        "external": {
+      65	                            "value": "External (advanced)",
+      66	                            "selected": 0
+      67	                        }
+      68	                    },
+      69	                    "path_expression": "",
+      70	                    "proto": {
+      71	                        "IPv4": {
+      72	                            "value": "IPv4",
+      73	                            "selected": 0
+      74	                        },
+      75	                        "IPv6": {
+      76	                            "value": "IPv6",
+      77	                            "selected": 0
+      78	                        }
+      79	                    },
+      80	                    "interface": {
+      81	                        "": {
+      82	                            "value": "None",
+      83	                            "selected": 1
+      84	                        },
+      85	                        "lan": {
+      86	                            "value": "LAN",
+      87	                            "selected": 0
+      88	                        },
+      89	                        "wan": {
+      90	                            "value": "WAN",
+      91	                            "selected": 0
+      92	                        }
+      93	                    },
+      94	                    "counters": "",
+      95	                    "updatefreq": "",
+      96	                    "content": {
+      97	                        "": {
+      98	                            "value": "",
+      99	                            "selected": 1
+     100	                        }
+     101	                    },
+     102	                    "password": "",
+     103	                    "username": "",
+     104	                    "authtype": {
+     105	                        "": {
+     106	                            "value": "None",
+     107	                            "selected": 1
+     108	                        },
+     109	                        "Basic": {
+     110	                            "value": "Basic",
+     111	                            "selected": 0
+     112	                        },
+     113	                        "Bearer": {
+     114	                            "value": "Bearer",
+     115	                            "selected": 0
+     116	                        }
+     117	                    },
+     118	                    "categories": [],
+     119	                    "current_items": "0",
+     120	                    "last_updated": "2025-03-10T12:07:28.332026",
+     121	                    "description": ""
+     122	                },
+     123	                "9399d6e7-d4a6-4376-8ea9-7a8521c895b9": {
+     124	                    "enabled": "1",
+     125	                    "name": "Biforch_openspeedtest",
+     126	                    "type": {
+     127	                        "host": {
+     128	                            "value": "Host(s)",
+     129	                            "selected": 1
+     130	                        },
+     131	                        "network": {
+     132	                            "value": "Network(s)",
+     133	                            "selected": 0
+     134	                        },
+     135	                        "port": {
+     136	                            "value": "Port(s)",
+     137	                            "selected": 0
+     138	                        },
+     139	                        "url": {
+     140	                            "value": "URL (IPs)",
+     141	                            "selected": 0
+     142	                        },
+     143	                        "urltable": {
+     144	                            "value": "URL Table (IPs)",
+     145	                            "selected": 0
+     146	                        },
+     147	                        "urljson": {
+     148	                            "value": "URL Table in JSON format (IPs)",
+     149	                            "selected": 0
+     150	                        },
+     151	                        "geoip": {
+     152	                            "value": "GeoIP",
+     153	                            "selected": 0
+     154	                        },
+     155	                        "networkgroup": {
+     156	                            "value": "Network group",
+     157	                            "selected": 0
+     158	                        },
+     159	                        "mac": {
+     160	                            "value": "MAC address",
+     161	                            "selected": 0
+     162	                        },
+     163	                        "asn": {
+     164	                            "value": "BGP ASN",
+     165	                            "selected": 0
+     166	                        },
+     167	                        "dynipv6host": {
+     168	                            "value": "Dynamic IPv6 Host",
+     169	                            "selected": 0
+     170	                        },
+     171	                        "authgroup": {
+     172	                            "value": "OpenVPN group",
+     173	                            "selected": 0
+     174	                        },
+     175	                        "internal": {
+     176	                            "value": "Internal (automatic)",
+     177	                            "selected": 0
+     178	                        },
+     179	                        "external": {
+     180	                            "value": "External (advanced)",
+     181	                            "selected": 0
+     182	                        }
+     183	                    },
+     184	                    "path_expression": "",
+     185	                    "proto": {
+     186	                        "IPv4": {
+     187	                            "value": "IPv4",
+     188	                            "selected": 0
+     189	                        },
+     190	                        "IPv6": {
+     191	                            "value": "IPv6",
+     192	                            "selected": 0
+     193	                        }
+     194	                    },
+     195	                    "interface": {
+     196	                        "": {
+     197	                            "value": "None",
+     198	                            "selected": 1
+     199	                        },
+     200	                        "lan": {
+     201	                            "value": "LAN",
+     202	                            "selected": 0
+     203	                        },
+     204	                        "wan": {
+     205	                            "value": "WAN",
+     206	                            "selected": 0
+     207	                        }
+     208	                    },
+     209	                    "counters": "",
+     210	                    "updatefreq": "",
+     211	                    "content": {
+     212	                        "": {
+     213	                            "value": "",
+     214	                            "selected": 1
+     215	                        }
+     216	                    },
+     217	                    "password": "",
+     218	                    "username": "",
+     219	                    "authtype": {
+     220	                        "": {
+     221	                            "value": "None",
+     222	                            "selected": 1
+     223	                        },
+     224	                        "Basic": {
+     225	                            "value": "Basic",
+     226	                            "selected": 0
+     227	                        },
+     228	                        "Bearer": {
+     229	                            "value": "Bearer",
+     230	                            "selected": 0
+     231	                        }
+     232	                    },
+     233	                    "categories": [],
+     234	                    "current_items": "0",
+     235	                    "last_updated": "2025-03-10T12:07:28.335622",
+     236	                    "description": ""
+     237	                },
+     238	                "9dd78cdb-437f-4df4-8c7d-ac7cd9aa5f4c": {
+     239	                    "enabled": "1",
+     240	                    "name": "S2",
+     241	                    "type": {
+     242	                        "host": {
+     243	                            "value": "Host(s)",
+     244	                            "selected": 1
+     245	                        },
+     246	                        "network": {
+     247	                            "value": "Network(s)",
+     248	                            "selected": 0
+     249	                        },
+     250	                        "port": {
+     251	                            "value": "Port(s)",
+     252	                            "selected": 0
+     253	                        },
+     254	                        "url": {
+     255	                            "value": "URL (IPs)",
+     256	                            "selected": 0
+     257	                        },
+     258	                        "urltable": {
+     259	                            "value": "URL Table (IPs)",
+     260	                            "selected": 0
+     261	                        },
+     262	                        "urljson": {
+     263	                            "value": "URL Table in JSON format (IPs)",
+     264	                            "selected": 0
+     265	                        },
+     266	                        "geoip": {
+     267	                            "value": "GeoIP",
+     268	                            "selected": 0
+     269	                        },
+     270	                        "networkgroup": {
+     271	                            "value": "Network group",
+     272	                            "selected": 0
+     273	                        },
+     274	                        "mac": {
+     275	                            "value": "MAC address",
+     276	                            "selected": 0
+     277	                        },
+     278	                        "asn": {
+     279	                            "value": "BGP ASN",
+     280	                            "selected": 0
+     281	                        },
+     282	                        "dynipv6host": {
+     283	                            "value": "Dynamic IPv6 Host",
+     284	                            "selected": 0
+     285	                        },
+     286	                        "authgroup": {
+     287	                            "value": "OpenVPN group",
+     288	                            "selected": 0
+     289	                        },
+     290	                        "internal": {
+     291	                            "value": "Internal (automatic)",
+     292	                            "selected": 0
+     293	                        },
+     294	                        "external": {
+     295	                            "value": "External (advanced)",
+     296	                            "selected": 0
+     297	                        }
+     298	                    },
+     299	                    "path_expression": "",
+     300	                    "proto": {
+     301	                        "IPv4": {
+     302	                            "value": "IPv4",
+     303	                            "selected": 0
+     304	                        },
+     305	                        "IPv6": {
+     306	                            "value": "IPv6",
+     307	                            "selected": 0
+     308	                        }
+     309	                    },
+     310	                    "interface": {
+     311	                        "": {
+     312	                            "value": "None",
+     313	                            "selected": 1
+     314	                        },
+     315	                        "lan": {
+     316	                            "value": "LAN",
+     317	                            "selected": 0
+     318	                        },
+     319	                        "wan": {
+     320	                            "value": "WAN",
+     321	                            "selected": 0
+     322	                        }
+     323	                    },
+     324	                    "counters": "",
+     325	                    "updatefreq": "",
+     326	                    "content": {
+     327	                        "": {
+     328	                            "value": "",
+     329	                            "selected": 1
+     330	                        }
+     331	                    },
+     332	                    "password": "",
+     333	                    "username": "",
+     334	                    "authtype": {
+     335	                        "": {
+     336	                            "value": "None",
+     337	                            "selected": 1
+     338	                        },
+     339	                        "Basic": {
+     340	                            "value": "Basic",
+     341	                            "selected": 0
+     342	                        },
+     343	                        "Bearer": {
+     344	                            "value": "Bearer",
+     345	                            "selected": 0
+     346	                        }
+     347	                    },
+     348	                    "categories": [],
+     349	                    "current_items": "",
+     350	                    "last_updated": "",
+     351	                    "description": ""
+     352	                },
+     353	                "bogons": {
+     354	                    "enabled": "1",
+     355	                    "name": "bogons",
+     356	                    "type": {
+     357	                        "host": {
+     358	                            "value": "Host(s)",
+     359	                            "selected": 0
+     360	                        },
+     361	                        "network": {
+     362	                            "value": "Network(s)",
+     363	                            "selected": 0
+     364	                        },
+     365	                        "port": {
+     366	                            "value": "Port(s)",
+     367	                            "selected": 0
+     368	                        },
+     369	                        "url": {
+     370	                            "value": "URL (IPs)",
+     371	                            "selected": 0
+     372	                        },
+     373	                        "urltable": {
+     374	                            "value": "URL Table (IPs)",
+     375	                            "selected": 0
+     376	                        },
+     377	                        "urljson": {
+     378	                            "value": "URL Table in JSON format (IPs)",
+     379	                            "selected": 0
+     380	                        },
+     381	                        "geoip": {
+     382	                            "value": "GeoIP",
+     383	                            "selected": 0
+     384	                        },
+     385	                        "networkgroup": {
+     386	                            "value": "Network group",
+     387	                            "selected": 0
+     388	                        },
+     389	                        "mac": {
+     390	                            "value": "MAC address",
+     391	                            "selected": 0
+     392	                        },
+     393	                        "asn": {
+     394	                            "value": "BGP ASN",
+     395	                            "selected": 0
+     396	                        },
+     397	                        "dynipv6host": {
+     398	                            "value": "Dynamic IPv6 Host",
+     399	                            "selected": 0
+     400	                        },
+     401	                        "authgroup": {
+     402	                            "value": "OpenVPN group",
+     403	                            "selected": 0
+     404	                        },
+     405	                        "internal": {
+     406	                            "value": "Internal (automatic)",
+     407	                            "selected": 0
+     408	                        },
+     409	                        "external": {
+     410	                            "value": "External (advanced)",
+     411	                            "selected": 1
+     412	                        }
+     413	                    },
+     414	                    "path_expression": "",
+     415	                    "proto": {
+     416	                        "IPv4": {
+     417	                            "value": "IPv4",
+     418	                            "selected": 0
+     419	                        },
+     420	                        "IPv6": {
+     421	                            "value": "IPv6",
+     422	                            "selected": 0
+     423	                        }
+     424	                    },
+     425	                    "interface": {
+     426	                        "": {
+     427	                            "value": "None",
+     428	                            "selected": 1
+     429	                        },
+     430	                        "lan": {
+     431	                            "value": "LAN",
+     432	                            "selected": 0
+     433	                        },
+     434	                        "wan": {
+     435	                            "value": "WAN",
+     436	                            "selected": 0
+     437	                        }
+     438	                    },
+     439	                    "counters": "",
+     440	                    "updatefreq": "",
+     441	                    "content": {
+     442	                        "": {
+     443	                            "value": "",
+     444	                            "selected": 1
+     445	                        }
+     446	                    },
+     447	                    "password": "",
+     448	                    "username": "",
+     449	                    "authtype": {
+     450	                        "": {
+     451	                            "value": "None",
+     452	                            "selected": 1
+     453	                        },
+     454	                        "Basic": {
+     455	                            "value": "Basic",
+     456	                            "selected": 0
+     457	                        },
+     458	                        "Bearer": {
+     459	                            "value": "Bearer",
+     460	                            "selected": 0
+     461	                        }
+     462	                    },
+     463	                    "categories": [],
+     464	                    "current_items": "2788",
+     465	                    "last_updated": "",
+     466	                    "description": "bogon networks (internal)"
+     467	                },
+     468	                "bogonsv6": {
+     469	                    "enabled": "1",
+     470	                    "name": "bogonsv6",
+     471	                    "type": {
+     472	                        "host": {
+     473	                            "value": "Host(s)",
+     474	                            "selected": 0
+     475	                        },
+     476	                        "network": {
+     477	                            "value": "Network(s)",
+     478	                            "selected": 0
+     479	                        },
+     480	                        "port": {
+     481	                            "value": "Port(s)",
+     482	                            "selected": 0
+     483	                        },
+     484	                        "url": {
+     485	                            "value": "URL (IPs)",
+     486	                            "selected": 0
+     487	                        },
+     488	                        "urltable": {
+     489	                            "value": "URL Table (IPs)",
+     490	                            "selected": 0
+     491	                        },
+     492	                        "urljson": {
+     493	                            "value": "URL Table in JSON format (IPs)",
+     494	                            "selected": 0
+     495	                        },
+     496	                        "geoip": {
+     497	                            "value": "GeoIP",
+     498	                            "selected": 0
+     499	                        },
+     500	                        "networkgroup": {
+     501	                            "value": "Network group",
+     502	                            "selected": 0
+     503	                        },
+     504	                        "mac": {
+     505	                            "value": "MAC address",
+     506	                            "selected": 0
+     507	                        },
+     508	                        "asn": {
+     509	                            "value": "BGP ASN",
+     510	                            "selected": 0
+     511	                        },
+     512	                        "dynipv6host": {
+     513	                            "value": "Dynamic IPv6 Host",
+     514	                            "selected": 0
+     515	                        },
+     516	                        "authgroup": {
+     517	                            "value": "OpenVPN group",
+     518	                            "selected": 0
+     519	                        },
+     520	                        "internal": {
+     521	                            "value": "Internal (automatic)",
+     522	                            "selected": 0
+     523	                        },
+     524	                        "external": {
+     525	                            "value": "External (advanced)",
+     526	                            "selected": 1
+     527	                        }
+     528	                    },
+     529	                    "path_expression": "",
+     530	                    "proto": {
+     531	                        "IPv4": {
+     532	                            "value": "IPv4",
+     533	                            "selected": 0
+     534	                        },
+     535	                        "IPv6": {
+     536	                            "value": "IPv6",
+     537	                            "selected": 0
+     538	                        }
+     539	                    },
+     540	                    "interface": {
+     541	                        "": {
+     542	                            "value": "None",
+     543	                            "selected": 1
+     544	                        },
+     545	                        "lan": {
+     546	                            "value": "LAN",
+     547	                            "selected": 0
+     548	                        },
+     549	                        "wan": {
+     550	                            "value": "WAN",
+     551	                            "selected": 0
+     552	                        }
+     553	                    },
+     554	                    "counters": "",
+     555	                    "updatefreq": "",
+     556	                    "content": {
+     557	                        "": {
+     558	                            "value": "",
+     559	                            "selected": 1
+     560	                        }
+     561	                    },
+     562	                    "password": "",
+     563	                    "username": "",
+     564	                    "authtype": {
+     565	                        "": {
+     566	                            "value": "None",
+     567	                            "selected": 1
+     568	                        },
+     569	                        "Basic": {
+     570	                            "value": "Basic",
+     571	                            "selected": 0
+     572	                        },
+     573	                        "Bearer": {
+     574	                            "value": "Bearer",
+     575	                            "selected": 0
+     576	                        }
+     577	                    },
+     578	                    "categories": [],
+     579	                    "current_items": "150263",
+     580	                    "last_updated": "",
+     581	                    "description": "bogon networks IPv6 (internal)"
+     582	                },
+     583	                "virusprot": {
+     584	                    "enabled": "1",
+     585	                    "name": "virusprot",
+     586	                    "type": {
+     587	                        "host": {
+     588	                            "value": "Host(s)",
+     589	                            "selected": 0
+     590	                        },
+     591	                        "network": {
+     592	                            "value": "Network(s)",
+     593	                            "selected": 0
+     594	                        },
+     595	                        "port": {
+     596	                            "value": "Port(s)",
+     597	                            "selected": 0
+     598	                        },
+     599	                        "url": {
+     600	                            "value": "URL (IPs)",
+     601	                            "selected": 0
+     602	                        },
+     603	                        "urltable": {
+     604	                            "value": "URL Table (IPs)",
+     605	                            "selected": 0
+     606	                        },
+     607	                        "urljson": {
+     608	                            "value": "URL Table in JSON format (IPs)",
+     609	                            "selected": 0
+     610	                        },
+     611	                        "geoip": {
+     612	                            "value": "GeoIP",
+     613	                            "selected": 0
+     614	                        },
+     615	                        "networkgroup": {
+     616	                            "value": "Network group",
+     617	                            "selected": 0
+     618	                        },
+     619	                        "mac": {
+     620	                            "value": "MAC address",
+     621	                            "selected": 0
+     622	                        },
+     623	                        "asn": {
+     624	                            "value": "BGP ASN",
+     625	                            "selected": 0
+     626	                        },
+     627	                        "dynipv6host": {
+     628	                            "value": "Dynamic IPv6 Host",
+     629	                            "selected": 0
+     630	                        },
+     631	                        "authgroup": {
+     632	                            "value": "OpenVPN group",
+     633	                            "selected": 0
+     634	                        },
+     635	                        "internal": {
+     636	                            "value": "Internal (automatic)",
+     637	                            "selected": 0
+     638	                        },
+     639	                        "external": {
+     640	                            "value": "External (advanced)",
+     641	                            "selected": 1
+     642	                        }
+     643	                    },
+     644	                    "path_expression": "",
+     645	                    "proto": {
+     646	                        "IPv4": {
+     647	                            "value": "IPv4",
+     648	                            "selected": 0
+     649	                        },
+     650	                        "IPv6": {
+     651	                            "value": "IPv6",
+     652	                            "selected": 0
+     653	                        }
+     654	                    },
+     655	                    "interface": {
+     656	                        "": {
+     657	                            "value": "None",
+     658	                            "selected": 1
+     659	                        },
+     660	                        "lan": {
+     661	                            "value": "LAN",
+     662	                            "selected": 0
+     663	                        },
+     664	                        "wan": {
+     665	                            "value": "WAN",
+     666	                            "selected": 0
+     667	                        }
+     668	                    },
+     669	                    "counters": "",
+     670	                    "updatefreq": "",
+     671	                    "content": {
+     672	                        "": {
+     673	                            "value": "",
+     674	                            "selected": 1
+     675	                        }
+     676	                    },
+     677	                    "password": "",
+     678	                    "username": "",
+     679	                    "authtype": {
+     680	                        "": {
+     681	                            "value": "None",
+     682	                            "selected": 1
+     683	                        },
+     684	                        "Basic": {
+     685	                            "value": "Basic",
+     686	                            "selected": 0
+     687	                        },
+     688	                        "Bearer": {
+     689	                            "value": "Bearer",
+     690	                            "selected": 0
+     691	                        }
+     692	                    },
+     693	                    "categories": [],
+     694	                    "current_items": "0",
+     695	                    "last_updated": "",
+     696	                    "description": "overload table for rate limiting (internal)"
+     697	                },
+     698	                "sshlockout": {
+     699	                    "enabled": "1",
+     700	                    "name": "sshlockout",
+     701	                    "type": {
+     702	                        "host": {
+     703	                            "value": "Host(s)",
+     704	                            "selected": 0
+     705	                        },
+     706	                        "network": {
+     707	                            "value": "Network(s)",
+     708	                            "selected": 0
+     709	                        },
+     710	                        "port": {
+     711	                            "value": "Port(s)",
+     712	                            "selected": 0
+     713	                        },
+     714	                        "url": {
+     715	                            "value": "URL (IPs)",
+     716	                            "selected": 0
+     717	                        },
+     718	                        "urltable": {
+     719	                            "value": "URL Table (IPs)",
+     720	                            "selected": 0
+     721	                        },
+     722	                        "urljson": {
+     723	                            "value": "URL Table in JSON format (IPs)",
+     724	                            "selected": 0
+     725	                        },
+     726	                        "geoip": {
+     727	                            "value": "GeoIP",
+     728	                            "selected": 0
+     729	                        },
+     730	                        "networkgroup": {
+     731	                            "value": "Network group",
+     732	                            "selected": 0
+     733	                        },
+     734	                        "mac": {
+     735	                            "value": "MAC address",
+     736	                            "selected": 0
+     737	                        },
+     738	                        "asn": {
+     739	                            "value": "BGP ASN",
+     740	                            "selected": 0
+     741	                        },
+     742	                        "dynipv6host": {
+     743	                            "value": "Dynamic IPv6 Host",
+     744	                            "selected": 0
+     745	                        },
+     746	                        "authgroup": {
+     747	                            "value": "OpenVPN group",
+     748	                            "selected": 0
+     749	                        },
+     750	                        "internal": {
+     751	                            "value": "Internal (automatic)",
+     752	                            "selected": 0
+     753	                        },
+     754	                        "external": {
+     755	                            "value": "External (advanced)",
+     756	                            "selected": 1
+     757	                        }
+     758	                    },
+     759	                    "path_expression": "",
+     760	                    "proto": {
+     761	                        "IPv4": {
+     762	                            "value": "IPv4",
+     763	                            "selected": 0
+     764	                        },
+     765	                        "IPv6": {
+     766	                            "value": "IPv6",
+     767	                            "selected": 0
+     768	                        }
+     769	                    },
+     770	                    "interface": {
+     771	                        "": {
+     772	                            "value": "None",
+     773	                            "selected": 1
+     774	                        },
+     775	                        "lan": {
+     776	                            "value": "LAN",
+     777	                            "selected": 0
+     778	                        },
+     779	                        "wan": {
+     780	                            "value": "WAN",
+     781	                            "selected": 0
+     782	                        }
+     783	                    },
+     784	                    "counters": "",
+     785	                    "updatefreq": "",
+     786	                    "content": {
+     787	                        "": {
+     788	                            "value": "",
+     789	                            "selected": 1
+     790	                        }
+     791	                    },
+     792	                    "password": "",
+     793	                    "username": "",
+     794	                    "authtype": {
+     795	                        "": {
+     796	                            "value": "None",
+     797	                            "selected": 1
+     798	                        },
+     799	                        "Basic": {
+     800	                            "value": "Basic",
+     801	                            "selected": 0
+     802	                        },
+     803	                        "Bearer": {
+     804	                            "value": "Bearer",
+     805	                            "selected": 0
+     806	                        }
+     807	                    },
+     808	                    "categories": [],
+     809	                    "current_items": "0",
+     810	                    "last_updated": "",
+     811	                    "description": "abuse lockout table (internal)"
+     812	                },
+     813	                "__lo0_network": {
+     814	                    "enabled": "1",
+     815	                    "name": "__lo0_network",
+     816	                    "type": {
+     817	                        "host": {
+     818	                            "value": "Host(s)",
+     819	                            "selected": 0
+     820	                        },
+     821	                        "network": {
+     822	                            "value": "Network(s)",
+     823	                            "selected": 0
+     824	                        },
+     825	                        "port": {
+     826	                            "value": "Port(s)",
+     827	                            "selected": 0
+     828	                        },
+     829	                        "url": {
+     830	                            "value": "URL (IPs)",
+     831	                            "selected": 0
+     832	                        },
+     833	                        "urltable": {
+     834	                            "value": "URL Table (IPs)",
+     835	                            "selected": 0
+     836	                        },
+     837	                        "urljson": {
+     838	                            "value": "URL Table in JSON format (IPs)",
+     839	                            "selected": 0
+     840	                        },
+     841	                        "geoip": {
+     842	                            "value": "GeoIP",
+     843	                            "selected": 0
+     844	                        },
+     845	                        "networkgroup": {
+     846	                            "value": "Network group",
+     847	                            "selected": 0
+     848	                        },
+     849	                        "mac": {
+     850	                            "value": "MAC address",
+     851	                            "selected": 0
+     852	                        },
+     853	                        "asn": {
+     854	                            "value": "BGP ASN",
+     855	                            "selected": 0
+     856	                        },
+     857	                        "dynipv6host": {
+     858	                            "value": "Dynamic IPv6 Host",
+     859	                            "selected": 0
+     860	                        },
+     861	                        "authgroup": {
+     862	                            "value": "OpenVPN group",
+     863	                            "selected": 0
+     864	                        },
+     865	                        "internal": {
+     866	                            "value": "Internal (automatic)",
+     867	                            "selected": 1
+     868	                        },
+     869	                        "external": {
+     870	                            "value": "External (advanced)",
+     871	                            "selected": 0
+     872	                        }
+     873	                    },
+     874	                    "path_expression": "",
+     875	                    "proto": {
+     876	                        "IPv4": {
+     877	                            "value": "IPv4",
+     878	                            "selected": 0
+     879	                        },
+     880	                        "IPv6": {
+     881	                            "value": "IPv6",
+     882	                            "selected": 0
+     883	                        }
+     884	                    },
+     885	                    "interface": {
+     886	                        "": {
+     887	                            "value": "None",
+     888	                            "selected": 1
+     889	                        },
+     890	                        "lan": {
+     891	                            "value": "LAN",
+     892	                            "selected": 0
+     893	                        },
+     894	                        "wan": {
+     895	                            "value": "WAN",
+     896	                            "selected": 0
+     897	                        }
+     898	                    },
+     899	                    "counters": "",
+     900	                    "updatefreq": "",
+     901	                    "content": {
+     902	                        "": {
+     903	                            "value": "",
+     904	                            "selected": 1
+     905	                        }
+     906	                    },
+     907	                    "password": "",
+     908	                    "username": "",
+     909	                    "authtype": {
+     910	                        "": {
+     911	                            "value": "None",
+     912	                            "selected": 1
+     913	                        },
+     914	                        "Basic": {
+     915	                            "value": "Basic",
+     916	                            "selected": 0
+     917	                        },
+     918	                        "Bearer": {
+     919	                            "value": "Bearer",
+     920	                            "selected": 0
+     921	                        }
+     922	                    },
+     923	                    "categories": [],
+     924	                    "current_items": "2",
+     925	                    "last_updated": "",
+     926	                    "description": "Loopback net"
+     927	                },
+     928	                "__lan_network": {
+     929	                    "enabled": "1",
+     930	                    "name": "__lan_network",
+     931	                    "type": {
+     932	                        "host": {
+     933	                            "value": "Host(s)",
+     934	                            "selected": 0
+     935	                        },
+     936	                        "network": {
+     937	                            "value": "Network(s)",
+     938	                            "selected": 0
+     939	                        },
+     940	                        "port": {
+     941	                            "value": "Port(s)",
+     942	                            "selected": 0
+     943	                        },
+     944	                        "url": {
+     945	                            "value": "URL (IPs)",
+     946	                            "selected": 0
+     947	                        },
+     948	                        "urltable": {
+     949	                            "value": "URL Table (IPs)",
+     950	                            "selected": 0
+     951	                        },
+     952	                        "urljson": {
+     953	                            "value": "URL Table in JSON format (IPs)",
+     954	                            "selected": 0
+     955	                        },
+     956	                        "geoip": {
+     957	                            "value": "GeoIP",
+     958	                            "selected": 0
+     959	                        },
+     960	                        "networkgroup": {
+     961	                            "value": "Network group",
+     962	                            "selected": 0
+     963	                        },
+     964	                        "mac": {
+     965	                            "value": "MAC address",
+     966	                            "selected": 0
+     967	                        },
+     968	                        "asn": {
+     969	                            "value": "BGP ASN",
+     970	                            "selected": 0
+     971	                        },
+     972	                        "dynipv6host": {
+     973	                            "value": "Dynamic IPv6 Host",
+     974	                            "selected": 0
+     975	                        },
+     976	                        "authgroup": {
+     977	                            "value": "OpenVPN group",
+     978	                            "selected": 0
+     979	                        },
+     980	                        "internal": {
+     981	                            "value": "Internal (automatic)",
+     982	                            "selected": 1
+     983	                        },
+     984	                        "external": {
+     985	                            "value": "External (advanced)",
+     986	                            "selected": 0
+     987	                        }
+     988	                    },
+     989	                    "path_expression": "",
+     990	                    "proto": {
+     991	                        "IPv4": {
+     992	                            "value": "IPv4",
+     993	                            "selected": 0
+     994	                        },
+     995	                        "IPv6": {
+     996	                            "value": "IPv6",
+     997	                            "selected": 0
+     998	                        }
+     999	                    },
+    1000	                    "interface": {
+    1001	                        "": {
+    1002	                            "value": "None",
+    1003	                            "selected": 1
+    1004	                        },
+    1005	                        "lan": {
+    1006	                            "value": "LAN",
+    1007	                            "selected": 0
+    1008	                        },
+    1009	                        "wan": {
+    1010	                            "value": "WAN",
+    1011	                            "selected": 0
+    1012	                        }
+    1013	                    },
+    1014	                    "counters": "",
+    1015	                    "updatefreq": "",
+    1016	                    "content": {
+    1017	                        "": {
+    1018	                            "value": "",
+    1019	                            "selected": 1
+    1020	                        }
+    1021	                    },
+    1022	                    "password": "",
+    1023	                    "username": "",
+    1024	                    "authtype": {
+    1025	                        "": {
+    1026	                            "value": "None",
+    1027	                            "selected": 1
+    1028	                        },
+    1029	                        "Basic": {
+    1030	                            "value": "Basic",
+    1031	                            "selected": 0
+    1032	                        },
+    1033	                        "Bearer": {
+    1034	                            "value": "Bearer",
+    1035	                            "selected": 0
+    1036	                        }
+    1037	                    },
+    1038	                    "categories": [],
+    1039	                    "current_items": "1",
+    1040	                    "last_updated": "",
+    1041	                    "description": "lan net"
+    1042	                },
+    1043	                "__wan_network": {
+    1044	                    "enabled": "1",
+    1045	                    "name": "__wan_network",
+    1046	                    "type": {
+    1047	                        "host": {
+    1048	                            "value": "Host(s)",
+    1049	                            "selected": 0
+    1050	                        },
+    1051	                        "network": {
+    1052	                            "value": "Network(s)",
+    1053	                            "selected": 0
+    1054	                        },
+    1055	                        "port": {
+    1056	                            "value": "Port(s)",
+    1057	                            "selected": 0
+    1058	                        },
+    1059	                        "url": {
+    1060	                            "value": "URL (IPs)",
+    1061	                            "selected": 0
+    1062	                        },
+    1063	                        "urltable": {
+    1064	                            "value": "URL Table (IPs)",
+    1065	                            "selected": 0
+    1066	                        },
+    1067	                        "urljson": {
+    1068	                            "value": "URL Table in JSON format (IPs)",
+    1069	                            "selected": 0
+    1070	                        },
+    1071	                        "geoip": {
+    1072	                            "value": "GeoIP",
+    1073	                            "selected": 0
+    1074	                        },
+    1075	                        "networkgroup": {
+    1076	                            "value": "Network group",
+    1077	                            "selected": 0
+    1078	                        },
+    1079	                        "mac": {
+    1080	                            "value": "MAC address",
+    1081	                            "selected": 0
+    1082	                        },
+    1083	                        "asn": {
+    1084	                            "value": "BGP ASN",
+    1085	                            "selected": 0
+    1086	                        },
+    1087	                        "dynipv6host": {
+    1088	                            "value": "Dynamic IPv6 Host",
+    1089	                            "selected": 0
+    1090	                        },
+    1091	                        "authgroup": {
+    1092	                            "value": "OpenVPN group",
+    1093	                            "selected": 0
+    1094	                        },
+    1095	                        "internal": {
+    1096	                            "value": "Internal (automatic)",
+    1097	                            "selected": 1
+    1098	                        },
+    1099	                        "external": {
+    1100	                            "value": "External (advanced)",
+    1101	                            "selected": 0
+    1102	                        }
+    1103	                    },
+    1104	                    "path_expression": "",
+    1105	                    "proto": {
+    1106	                        "IPv4": {
+    1107	                            "value": "IPv4",
+    1108	                            "selected": 0
+    1109	                        },
+    1110	                        "IPv6": {
+    1111	                            "value": "IPv6",
+    1112	                            "selected": 0
+    1113	                        }
+    1114	                    },
+    1115	                    "interface": {
+    1116	                        "": {
+    1117	                            "value": "None",
+    1118	                            "selected": 1
+    1119	                        },
+    1120	                        "lan": {
+    1121	                            "value": "LAN",
+    1122	                            "selected": 0
+    1123	                        },
+    1124	                        "wan": {
+    1125	                            "value": "WAN",
+    1126	                            "selected": 0
+    1127	                        }
+    1128	                    },
+    1129	                    "counters": "",
+    1130	                    "updatefreq": "",
+    1131	                    "content": {
+    1132	                        "": {
+    1133	                            "value": "",
+    1134	                            "selected": 1
+    1135	                        }
+    1136	                    },
+    1137	                    "password": "",
+    1138	                    "username": "",
+    1139	                    "authtype": {
+    1140	                        "": {
+    1141	                            "value": "None",
+    1142	                            "selected": 1
+    1143	                        },
+    1144	                        "Basic": {
+    1145	                            "value": "Basic",
+    1146	                            "selected": 0
+    1147	                        },
+    1148	                        "Bearer": {
+    1149	                            "value": "Bearer",
+    1150	                            "selected": 0
+    1151	                        }
+    1152	                    },
+    1153	                    "categories": [],
+    1154	                    "current_items": "1",
+    1155	                    "last_updated": "",
+    1156	                    "description": "wan net"
+    1157	                }
+    1158	            }
+    1159	        }
+    1160	    }
+    1161	}
+
+------------------------------ test_responses/firewall_rules.json ------------------------------
+       1	{"rows":[{"uuid":"0152bda8-4f20-4618-b478-1ed90246f0c4","enabled":"1","sequence":"1","action":"Pass","description":""}],"rowCount":1,"total":1,"current":1}
+
+------------------------------ test_responses/output.json ------------------------------
+       1	{
+       2	  "rule": {
+       3	    "enabled": "1",
+       4	    "statetype": {
+       5	      "keep": {
+       6	        "value": "keep state",
+       7	        "selected": 1
+       8	      },
+       9	      "sloppy": {
+      10	        "value": "sloppy state",
+      11	        "selected": 0
+      12	      },
+      13	      "modulate": {
+      14	        "value": "modulate state",
+      15	        "selected": 0
+      16	      },
+      17	      "synproxy": {
+      18	        "value": "synproxy state",
+      19	        "selected": 0
+      20	      },
+      21	      "none": {
+      22	        "value": "no state",
+      23	        "selected": 0
+      24	      }
+      25	    },
+      26	    "state-policy": {
+      27	      "": {
+      28	        "value": "default",
+      29	        "selected": 1
+      30	      },
+      31	      "if-bound": {
+      32	        "value": "Bind states to interface",
+      33	        "selected": 0
+      34	      },
+      35	      "floating": {
+      36	        "value": "Floating states",
+      37	        "selected": 0
+      38	      }
+      39	    },
+      40	    "sequence": "1",
+      41	    "action": {
+      42	      "pass": {
+      43	        "value": "Pass",
+      44	        "selected": 0
+      45	      },
+      46	      "block": {
+      47	        "value": "Block",
+      48	        "selected": 0
+      49	      },
+      50	      "reject": {
+      51	        "value": "Reject",
+      52	        "selected": 1
+      53	      }
+      54	    },
+      55	    "quick": "1",
+      56	    "interfacenot": "0",
+      57	    "interface": {
+      58	      "lan": {
+      59	        "value": "LAN",
+      60	        "selected": 1
+      61	      },
+      62	      "wan": {
+      63	        "value": "WAN",
+      64	        "selected": 0
+      65	      }
+      66	    },
+      67	    "direction": {
+      68	      "in": {
+      69	        "value": "In",
+      70	        "selected": 1
+      71	      },
+      72	      "out": {
+      73	        "value": "Out",
+      74	        "selected": 0
+      75	      }
+      76	    },
+      77	    "ipprotocol": {
+      78	      "inet": {
+      79	        "value": "IPv4",
+      80	        "selected": 1
+      81	      },
+      82	      "inet6": {
+      83	        "value": "IPv6",
+      84	        "selected": 0
+      85	      },
+      86	      "inet46": {
+      87	        "value": "IPv4+IPv6",
+      88	        "selected": 0
+      89	      }
+      90	    },
+      91	    "protocol": {
+      92	      "3PC": {
+      93	        "value": "3PC",
+      94	        "selected": 0
+      95	      },
+      96	      "A/N": {
+      97	        "value": "A/N",
+      98	        "selected": 0
+      99	      },
+     100	      "AH": {
+     101	        "value": "AH",
+     102	        "selected": 0
+     103	      },
+     104	      "any": {
+     105	        "value": "any",
+     106	        "selected": 1
+     107	      },
+     108	      "ARGUS": {
+     109	        "value": "ARGUS",
+     110	        "selected": 0
+     111	      },
+     112	      "ARIS": {
+     113	        "value": "ARIS",
+     114	        "selected": 0
+     115	      },
+     116	      "AX.25": {
+     117	        "value": "AX.25",
+     118	        "selected": 0
+     119	      },
+     120	      "BBN-RCC": {
+     121	        "value": "BBN-RCC",
+     122	        "selected": 0
+     123	      },
+     124	      "BNA": {
+     125	        "value": "BNA",
+     126	        "selected": 0
+     127	      },
+     128	      "BR-SAT-MON": {
+     129	        "value": "BR-SAT-MON",
+     130	        "selected": 0
+     131	      },
+     132	      "CARP": {
+     133	        "value": "CARP",
+     134	        "selected": 0
+     135	      },
+     136	      "CBT": {
+     137	        "value": "CBT",
+     138	        "selected": 0
+     139	      },
+     140	      "CFTP": {
+     141	        "value": "CFTP",
+     142	        "selected": 0
+     143	      },
+     144	      "CHAOS": {
+     145	        "value": "CHAOS",
+     146	        "selected": 0
+     147	      },
+     148	      "COMPAQ-PEER": {
+     149	        "value": "COMPAQ-PEER",
+     150	        "selected": 0
+     151	      },
+     152	      "CPHB": {
+     153	        "value": "CPHB",
+     154	        "selected": 0
+     155	      },
+     156	      "CPNX": {
+     157	        "value": "CPNX",
+     158	        "selected": 0
+     159	      },
+     160	      "CRTP": {
+     161	        "value": "CRTP",
+     162	        "selected": 0
+     163	      },
+     164	      "CRUDP": {
+     165	        "value": "CRUDP",
+     166	        "selected": 0
+     167	      },
+     168	      "DCCP": {
+     169	        "value": "DCCP",
+     170	        "selected": 0
+     171	      },
+     172	      "DCN": {
+     173	        "value": "DCN",
+     174	        "selected": 0
+     175	      },
+     176	      "DDP": {
+     177	        "value": "DDP",
+     178	        "selected": 0
+     179	      },
+     180	      "DDX": {
+     181	        "value": "DDX",
+     182	        "selected": 0
+     183	      },
+     184	      "DGP": {
+     185	        "value": "DGP",
+     186	        "selected": 0
+     187	      },
+     188	      "DIVERT": {
+     189	        "value": "DIVERT",
+     190	        "selected": 0
+     191	      },
+     192	      "DSR": {
+     193	        "value": "DSR",
+     194	        "selected": 0
+     195	      },
+     196	      "EGP": {
+     197	        "value": "EGP",
+     198	        "selected": 0
+     199	      },
+     200	      "EIGRP": {
+     201	        "value": "EIGRP",
+     202	        "selected": 0
+     203	      },
+     204	      "EMCON": {
+     205	        "value": "EMCON",
+     206	        "selected": 0
+     207	      },
+     208	      "ENCAP": {
+     209	        "value": "ENCAP",
+     210	        "selected": 0
+     211	      },
+     212	      "ESP": {
+     213	        "value": "ESP",
+     214	        "selected": 0
+     215	      },
+     216	      "ETHERIP": {
+     217	        "value": "ETHERIP",
+     218	        "selected": 0
+     219	      },
+     220	      "FC": {
+     221	        "value": "FC",
+     222	        "selected": 0
+     223	      },
+     224	      "GGP": {
+     225	        "value": "GGP",
+     226	        "selected": 0
+     227	      },
+     228	      "GMTP": {
+     229	        "value": "GMTP",
+     230	        "selected": 0
+     231	      },
+     232	      "GRE": {
+     233	        "value": "GRE",
+     234	        "selected": 0
+     235	      },
+     236	      "HIP": {
+     237	        "value": "HIP",
+     238	        "selected": 0
+     239	      },
+     240	      "HMP": {
+     241	        "value": "HMP",
+     242	        "selected": 0
+     243	      },
+     244	      "I-NLSP": {
+     245	        "value": "I-NLSP",
+     246	        "selected": 0
+     247	      },
+     248	      "IATP": {
+     249	        "value": "IATP",
+     250	        "selected": 0
+     251	      },
+     252	      "ICMP": {
+     253	        "value": "ICMP",
+     254	        "selected": 0
+     255	      },
+     256	      "IDPR": {
+     257	        "value": "IDPR",
+     258	        "selected": 0
+     259	      },
+     260	      "IDPR-CMTP": {
+     261	        "value": "IDPR-CMTP",
+     262	        "selected": 0
+     263	      },
+     264	      "IDRP": {
+     265	        "value": "IDRP",
+     266	        "selected": 0
+     267	      },
+     268	      "IFMP": {
+     269	        "value": "IFMP",
+     270	        "selected": 0
+     271	      },
+     272	      "IGMP": {
+     273	        "value": "IGMP",
+     274	        "selected": 0
+     275	      },
+     276	      "IGP": {
+     277	        "value": "IGP",
+     278	        "selected": 0
+     279	      },
+     280	      "IL": {
+     281	        "value": "IL",
+     282	        "selected": 0
+     283	      },
+     284	      "IPCOMP": {
+     285	        "value": "IPCOMP",
+     286	        "selected": 0
+     287	      },
+     288	      "IPCV": {
+     289	        "value": "IPCV",
+     290	        "selected": 0
+     291	      },
+     292	      "IPENCAP": {
+     293	        "value": "IPENCAP",
+     294	        "selected": 0
+     295	      },
+     296	      "IPIP": {
+     297	        "value": "IPIP",
+     298	        "selected": 0
+     299	      },
+     300	      "IPPC": {
+     301	        "value": "IPPC",
+     302	        "selected": 0
+     303	      },
+     304	      "IPV6": {
+     305	        "value": "IPV6",
+     306	        "selected": 0
+     307	      },
+     308	      "IPV6-ICMP": {
+     309	        "value": "IPV6-ICMP",
+     310	        "selected": 0
+     311	      },
+     312	      "IPX-IN-IP": {
+     313	        "value": "IPX-IN-IP",
+     314	        "selected": 0
+     315	      },
+     316	      "IRTP": {
+     317	        "value": "IRTP",
+     318	        "selected": 0
+     319	      },
+     320	      "ISIS": {
+     321	        "value": "ISIS",
+     322	        "selected": 0
+     323	      },
+     324	      "ISO-IP": {
+     325	        "value": "ISO-IP",
+     326	        "selected": 0
+     327	      },
+     328	      "ISO-TP4": {
+     329	        "value": "ISO-TP4",
+     330	        "selected": 0
+     331	      },
+     332	      "KRYPTOLAN": {
+     333	        "value": "KRYPTOLAN",
+     334	        "selected": 0
+     335	      },
+     336	      "L2TP": {
+     337	        "value": "L2TP",
+     338	        "selected": 0
+     339	      },
+     340	      "LARP": {
+     341	        "value": "LARP",
+     342	        "selected": 0
+     343	      },
+     344	      "LEAF-1": {
+     345	        "value": "LEAF-1",
+     346	        "selected": 0
+     347	      },
+     348	      "LEAF-2": {
+     349	        "value": "LEAF-2",
+     350	        "selected": 0
+     351	      },
+     352	      "MANET": {
+     353	        "value": "MANET",
+     354	        "selected": 0
+     355	      },
+     356	      "MERIT-INP": {
+     357	        "value": "MERIT-INP",
+     358	        "selected": 0
+     359	      },
+     360	      "MFE-NSP": {
+     361	        "value": "MFE-NSP",
+     362	        "selected": 0
+     363	      },
+     364	      "MICP": {
+     365	        "value": "MICP",
+     366	        "selected": 0
+     367	      },
+     368	      "MOBILE": {
+     369	        "value": "MOBILE",
+     370	        "selected": 0
+     371	      },
+     372	      "MPLS-IN-IP": {
+     373	        "value": "MPLS-IN-IP",
+     374	        "selected": 0
+     375	      },
+     376	      "MTP": {
+     377	        "value": "MTP",
+     378	        "selected": 0
+     379	      },
+     380	      "MUX": {
+     381	        "value": "MUX",
+     382	        "selected": 0
+     383	      },
+     384	      "NARP": {
+     385	        "value": "NARP",
+     386	        "selected": 0
+     387	      },
+     388	      "NETBLT": {
+     389	        "value": "NETBLT",
+     390	        "selected": 0
+     391	      },
+     392	      "NSFNET-IGP": {
+     393	        "value": "NSFNET-IGP",
+     394	        "selected": 0
+     395	      },
+     396	      "NVP": {
+     397	        "value": "NVP",
+     398	        "selected": 0
+     399	      },
+     400	      "OSPF": {
+     401	        "value": "OSPF",
+     402	        "selected": 0
+     403	      },
+     404	      "PFSYNC": {
+     405	        "value": "PFSYNC",
+     406	        "selected": 0
+     407	      },
+     408	      "PGM": {
+     409	        "value": "PGM",
+     410	        "selected": 0
+     411	      },
+     412	      "PIM": {
+     413	        "value": "PIM",
+     414	        "selected": 0
+     415	      },
+     416	      "PIPE": {
+     417	        "value": "PIPE",
+     418	        "selected": 0
+     419	      },
+     420	      "PNNI": {
+     421	        "value": "PNNI",
+     422	        "selected": 0
+     423	      },
+     424	      "PRM": {
+     425	        "value": "PRM",
+     426	        "selected": 0
+     427	      },
+     428	      "PTP": {
+     429	        "value": "PTP",
+     430	        "selected": 0
+     431	      },
+     432	      "PUP": {
+     433	        "value": "PUP",
+     434	        "selected": 0
+     435	      },
+     436	      "PVP": {
+     437	        "value": "PVP",
+     438	        "selected": 0
+     439	      },
+     440	      "QNX": {
+     441	        "value": "QNX",
+     442	        "selected": 0
+     443	      },
+     444	      "RDP": {
+     445	        "value": "RDP",
+     446	        "selected": 0
+     447	      },
+     448	      "ROHC": {
+     449	        "value": "ROHC",
+     450	        "selected": 0
+     451	      },
+     452	      "RSVP": {
+     453	        "value": "RSVP",
+     454	        "selected": 0
+     455	      },
+     456	      "RSVP-E2E-IGNORE": {
+     457	        "value": "RSVP-E2E-IGNORE",
+     458	        "selected": 0
+     459	      },
+     460	      "RVD": {
+     461	        "value": "RVD",
+     462	        "selected": 0
+     463	      },
+     464	      "SAT-EXPAK": {
+     465	        "value": "SAT-EXPAK",
+     466	        "selected": 0
+     467	      },
+     468	      "SAT-MON": {
+     469	        "value": "SAT-MON",
+     470	        "selected": 0
+     471	      },
+     472	      "SCC-SP": {
+     473	        "value": "SCC-SP",
+     474	        "selected": 0
+     475	      },
+     476	      "SCPS": {
+     477	        "value": "SCPS",
+     478	        "selected": 0
+     479	      },
+     480	      "SCTP": {
+     481	        "value": "SCTP",
+     482	        "selected": 0
+     483	      },
+     484	      "SDRP": {
+     485	        "value": "SDRP",
+     486	        "selected": 0
+     487	      },
+     488	      "SECURE-VMTP": {
+     489	        "value": "SECURE-VMTP",
+     490	        "selected": 0
+     491	      },
+     492	      "SHIM6": {
+     493	        "value": "SHIM6",
+     494	        "selected": 0
+     495	      },
+     496	      "SKIP": {
+     497	        "value": "SKIP",
+     498	        "selected": 0
+     499	      },
+     500	      "SM": {
+     501	        "value": "SM",
+     502	        "selected": 0
+     503	      },
+     504	      "SMP": {
+     505	        "value": "SMP",
+     506	        "selected": 0
+     507	      },
+     508	      "SNP": {
+     509	        "value": "SNP",
+     510	        "selected": 0
+     511	      },
+     512	      "SPRITE-RPC": {
+     513	        "value": "SPRITE-RPC",
+     514	        "selected": 0
+     515	      },
+     516	      "SPS": {
+     517	        "value": "SPS",
+     518	        "selected": 0
+     519	      },
+     520	      "SRP": {
+     521	        "value": "SRP",
+     522	        "selected": 0
+     523	      },
+     524	      "ST2": {
+     525	        "value": "ST2",
+     526	        "selected": 0
+     527	      },
+     528	      "STP": {
+     529	        "value": "STP",
+     530	        "selected": 0
+     531	      },
+     532	      "SUN-ND": {
+     533	        "value": "SUN-ND",
+     534	        "selected": 0
+     535	      },
+     536	      "SWIPE": {
+     537	        "value": "SWIPE",
+     538	        "selected": 0
+     539	      },
+     540	      "TCF": {
+     541	        "value": "TCF",
+     542	        "selected": 0
+     543	      },
+     544	      "TCP": {
+     545	        "value": "TCP",
+     546	        "selected": 0
+     547	      },
+     548	      "TCP/UDP": {
+     549	        "value": "TCP/UDP",
+     550	        "selected": 0
+     551	      },
+     552	      "TLSP": {
+     553	        "value": "TLSP",
+     554	        "selected": 0
+     555	      },
+     556	      "TP++": {
+     557	        "value": "TP++",
+     558	        "selected": 0
+     559	      },
+     560	      "TRUNK-1": {
+     561	        "value": "TRUNK-1",
+     562	        "selected": 0
+     563	      },
+     564	      "TRUNK-2": {
+     565	        "value": "TRUNK-2",
+     566	        "selected": 0
+     567	      },
+     568	      "TTP": {
+     569	        "value": "TTP",
+     570	        "selected": 0
+     571	      },
+     572	      "UDP": {
+     573	        "value": "UDP",
+     574	        "selected": 0
+     575	      },
+     576	      "UDPLITE": {
+     577	        "value": "UDPLITE",
+     578	        "selected": 0
+     579	      },
+     580	      "UTI": {
+     581	        "value": "UTI",
+     582	        "selected": 0
+     583	      },
+     584	      "VINES": {
+     585	        "value": "VINES",
+     586	        "selected": 0
+     587	      },
+     588	      "VISA": {
+     589	        "value": "VISA",
+     590	        "selected": 0
+     591	      },
+     592	      "VMTP": {
+     593	        "value": "VMTP",
+     594	        "selected": 0
+     595	      },
+     596	      "WB-EXPAK": {
+     597	        "value": "WB-EXPAK",
+     598	        "selected": 0
+     599	      },
+     600	      "WB-MON": {
+     601	        "value": "WB-MON",
+     602	        "selected": 0
+     603	      },
+     604	      "WESP": {
+     605	        "value": "WESP",
+     606	        "selected": 0
+     607	      },
+     608	      "WSN": {
+     609	        "value": "WSN",
+     610	        "selected": 0
+     611	      },
+     612	      "XNET": {
+     613	        "value": "XNET",
+     614	        "selected": 0
+     615	      },
+     616	      "XNS-IDP": {
+     617	        "value": "XNS-IDP",
+     618	        "selected": 0
+     619	      },
+     620	      "XTP": {
+     621	        "value": "XTP",
+     622	        "selected": 0
+     623	      }
+     624	    },
+     625	    "source_net": "192.168.87.52",
+     626	    "source_not": "0",
+     627	    "source_port": "",
+     628	    "destination_net": "Biforch_memos",
+     629	    "destination_not": "0",
+     630	    "destination_port": "",
+     631	    "gateway": {
+     632	      "": {
+     633	        "value": "None",
+     634	        "selected": 1
+     635	      },
+     636	      "Null4": {
+     637	        "value": "Null4 - 127.0.0.1",
+     638	        "selected": 0
+     639	      },
+     640	      "Null6": {
+     641	        "value": "Null6 - ::1",
+     642	        "selected": 0
+     643	      },
+     644	      "WAN_DHCP": {
+     645	        "value": "WAN_DHCP - 192.168.142.2",
+     646	        "selected": 0
+     647	      },
+     648	      "WAN_DHCP6": {
+     649	        "value": "WAN_DHCP6 - inet6",
+     650	        "selected": 0
+     651	      }
+     652	    },
+     653	    "replyto": {
+     654	      "": {
+     655	        "value": "None",
+     656	        "selected": 1
+     657	      },
+     658	      "Null4": {
+     659	        "value": "Null4 - 127.0.0.1",
+     660	        "selected": 0
+     661	      },
+     662	      "Null6": {
+     663	        "value": "Null6 - ::1",
+     664	        "selected": 0
+     665	      },
+     666	      "WAN_DHCP": {
+     667	        "value": "WAN_DHCP - 192.168.142.2",
+     668	        "selected": 0
+     669	      },
+     670	      "WAN_DHCP6": {
+     671	        "value": "WAN_DHCP6 - inet6",
+     672	        "selected": 0
+     673	      }
+     674	    },
+     675	    "disablereplyto": "0",
+     676	    "log": "0",
+     677	    "allowopts": "0",
+     678	    "nosync": "0",
+     679	    "nopfsync": "0",
+     680	    "statetimeout": "",
+     681	    "max-src-nodes": "",
+     682	    "max-src-states": "",
+     683	    "max-src-conn": "",
+     684	    "max": "",
+     685	    "max-src-conn-rate": "",
+     686	    "max-src-conn-rates": "",
+     687	    "overload": {
+     688	      "": {
+     689	        "value": "None",
+     690	        "selected": 1
+     691	      },
+     692	      "e3c39558-68fd-4cf6-805a-5ba212bddb13": {
+     693	        "value": "Biforch_memos",
+     694	        "selected": 0
+     695	      },
+     696	      "9399d6e7-d4a6-4376-8ea9-7a8521c895b9": {
+     697	        "value": "Biforch_openspeedtest",
+     698	        "selected": 0
+     699	      },
+     700	      "bogons": {
+     701	        "value": "bogons",
+     702	        "selected": 0
+     703	      },
+     704	      "bogonsv6": {
+     705	        "value": "bogonsv6",
+     706	        "selected": 0
+     707	      },
+     708	      "sshlockout": {
+     709	        "value": "sshlockout",
+     710	        "selected": 0
+     711	      },
+     712	      "virusprot": {
+     713	        "value": "virusprot",
+     714	        "selected": 0
+     715	      },
+     716	      "__lan_network": {
+     717	        "value": "__lan_network",
+     718	        "selected": 0
+     719	      },
+     720	      "__lo0_network": {
+     721	        "value": "__lo0_network",
+     722	        "selected": 0
+     723	      },
+     724	      "__wan_network": {
+     725	        "value": "__wan_network",
+     726	        "selected": 0
+     727	      }
+     728	    },
+     729	    "adaptivestart": "",
+     730	    "adaptiveend": "",
+     731	    "prio": {
+     732	      "": {
+     733	        "value": "Any priority",
+     734	        "selected": 1
+     735	      },
+     736	      "1": {
+     737	        "value": "Background (1, lowest)",
+     738	        "selected": 0
+     739	      },
+     740	      "0": {
+     741	        "value": "Best Effort (0, default)",
+     742	        "selected": 0
+     743	      },
+     744	      "2": {
+     745	        "value": "Excellent Effort (2)",
+     746	        "selected": 0
+     747	      },
+     748	      "3": {
+     749	        "value": "Critical Applications (3)",
+     750	        "selected": 0
+     751	      },
+     752	      "4": {
+     753	        "value": "Video (4)",
+     754	        "selected": 0
+     755	      },
+     756	      "5": {
+     757	        "value": "Voice (5)",
+     758	        "selected": 0
+     759	      },
+     760	      "6": {
+     761	        "value": "Internetwork Control (6)",
+     762	        "selected": 0
+     763	      },
+     764	      "7": {
+     765	        "value": "Network Control (7, highest)",
+     766	        "selected": 0
+     767	      }
+     768	    },
+     769	    "set-prio": {
+     770	      "": {
+     771	        "value": "Keep current priority",
+     772	        "selected": 1
+     773	      },
+     774	      "1": {
+     775	        "value": "Background (1, lowest)",
+     776	        "selected": 0
+     777	      },
+     778	      "0": {
+     779	        "value": "Best Effort (0, default)",
+     780	        "selected": 0
+     781	      },
+     782	      "2": {
+     783	        "value": "Excellent Effort (2)",
+     784	        "selected": 0
+     785	      },
+     786	      "3": {
+     787	        "value": "Critical Applications (3)",
+     788	        "selected": 0
+     789	      },
+     790	      "4": {
+     791	        "value": "Video (4)",
+     792	        "selected": 0
+     793	      },
+     794	      "5": {
+     795	        "value": "Voice (5)",
+     796	        "selected": 0
+     797	      },
+     798	      "6": {
+     799	        "value": "Internetwork Control (6)",
+     800	        "selected": 0
+     801	      },
+     802	      "7": {
+     803	        "value": "Network Control (7, highest)",
+     804	        "selected": 0
+     805	      }
+     806	    },
+     807	    "set-prio-low": {
+     808	      "": {
+     809	        "value": "Keep current priority",
+     810	        "selected": 1
+     811	      },
+     812	      "1": {
+     813	        "value": "Background (1, lowest)",
+     814	        "selected": 0
+     815	      },
+     816	      "0": {
+     817	        "value": "Best Effort (0, default)",
+     818	        "selected": 0
+     819	      },
+     820	      "2": {
+     821	        "value": "Excellent Effort (2)",
+     822	        "selected": 0
+     823	      },
+     824	      "3": {
+     825	        "value": "Critical Applications (3)",
+     826	        "selected": 0
+     827	      },
+     828	      "4": {
+     829	        "value": "Video (4)",
+     830	        "selected": 0
+     831	      },
+     832	      "5": {
+     833	        "value": "Voice (5)",
+     834	        "selected": 0
+     835	      },
+     836	      "6": {
+     837	        "value": "Internetwork Control (6)",
+     838	        "selected": 0
+     839	      },
+     840	      "7": {
+     841	        "value": "Network Control (7, highest)",
+     842	        "selected": 0
+     843	      }
+     844	    },
+     845	    "tag": "",
+     846	    "tagged": "",
+     847	    "tcpflags1": {
+     848	      "syn": {
+     849	        "value": "syn",
+     850	        "selected": 0
+     851	      },
+     852	      "ack": {
+     853	        "value": "ack",
+     854	        "selected": 0
+     855	      },
+     856	      "fin": {
+     857	        "value": "fin",
+     858	        "selected": 0
+     859	      },
+     860	      "rst": {
+     861	        "value": "rst",
+     862	        "selected": 0
+     863	      },
+     864	      "psh": {
+     865	        "value": "psh",
+     866	        "selected": 0
+     867	      },
+     868	      "urg": {
+     869	        "value": "urg",
+     870	        "selected": 0
+     871	      },
+     872	      "ece": {
+     873	        "value": "ece",
+     874	        "selected": 0
+     875	      },
+     876	      "cwr": {
+     877	        "value": "cwr",
+     878	        "selected": 0
+     879	      }
+     880	    },
+     881	    "tcpflags2": {
+     882	      "syn": {
+     883	        "value": "syn",
+     884	        "selected": 0
+     885	      },
+     886	      "ack": {
+     887	        "value": "ack",
+     888	        "selected": 0
+     889	      },
+     890	      "fin": {
+     891	        "value": "fin",
+     892	        "selected": 0
+     893	      },
+     894	      "rst": {
+     895	        "value": "rst",
+     896	        "selected": 0
+     897	      },
+     898	      "psh": {
+     899	        "value": "psh",
+     900	        "selected": 0
+     901	      },
+     902	      "urg": {
+     903	        "value": "urg",
+     904	        "selected": 0
+     905	      },
+     906	      "ece": {
+     907	        "value": "ece",
+     908	        "selected": 0
+     909	      },
+     910	      "cwr": {
+     911	        "value": "cwr",
+     912	        "selected": 0
+     913	      }
+     914	    },
+     915	    "categories": [],
+     916	    "sched": {
+     917	      "": {
+     918	        "value": "None",
+     919	        "selected": 1
+     920	      }
+     921	    },
+     922	    "tos": {
+     923	      "": {
+     924	        "value": "Any",
+     925	        "selected": 1
+     926	      },
+     927	      "lowdelay": {
+     928	        "value": "lowdelay",
+     929	        "selected": 0
+     930	      },
+     931	      "critical": {
+     932	        "value": "critical",
+     933	        "selected": 0
+     934	      },
+     935	      "inetcontrol": {
+     936	        "value": "inetcontrol",
+     937	        "selected": 0
+     938	      },
+     939	      "netcontrol": {
+     940	        "value": "netcontrol",
+     941	        "selected": 0
+     942	      },
+     943	      "throughput": {
+     944	        "value": "throughput",
+     945	        "selected": 0
+     946	      },
+     947	      "reliability": {
+     948	        "value": "reliability",
+     949	        "selected": 0
+     950	      },
+     951	      "ef": {
+     952	        "value": "EF",
+     953	        "selected": 0
+     954	      },
+     955	      "af11": {
+     956	        "value": "AF11",
+     957	        "selected": 0
+     958	      },
+     959	      "af12": {
+     960	        "value": "AF12",
+     961	        "selected": 0
+     962	      },
+     963	      "af13": {
+     964	        "value": "AF13",
+     965	        "selected": 0
+     966	      },
+     967	      "af21": {
+     968	        "value": "AF21",
+     969	        "selected": 0
+     970	      },
+     971	      "af22": {
+     972	        "value": "AF22",
+     973	        "selected": 0
+     974	      },
+     975	      "af23": {
+     976	        "value": "AF23",
+     977	        "selected": 0
+     978	      },
+     979	      "af31": {
+     980	        "value": "AF31",
+     981	        "selected": 0
+     982	      },
+     983	      "af32": {
+     984	        "value": "AF32",
+     985	        "selected": 0
+     986	      },
+     987	      "af33": {
+     988	        "value": "AF33",
+     989	        "selected": 0
+     990	      },
+     991	      "af41": {
+     992	        "value": "AF41",
+     993	        "selected": 0
+     994	      },
+     995	      "af42": {
+     996	        "value": "AF42",
+     997	        "selected": 0
+     998	      },
+     999	      "af43": {
+    1000	        "value": "AF43",
+    1001	        "selected": 0
+    1002	      },
+    1003	      "cs0": {
+    1004	        "value": "CS0",
+    1005	        "selected": 0
+    1006	      },
+    1007	      "cs1": {
+    1008	        "value": "CS1",
+    1009	        "selected": 0
+    1010	      },
+    1011	      "cs2": {
+    1012	        "value": "CS2",
+    1013	        "selected": 0
+    1014	      },
+    1015	      "cs3": {
+    1016	        "value": "CS3",
+    1017	        "selected": 0
+    1018	      },
+    1019	      "cs4": {
+    1020	        "value": "CS4",
+    1021	        "selected": 0
+    1022	      },
+    1023	      "cs5": {
+    1024	        "value": "CS5",
+    1025	        "selected": 0
+    1026	      },
+    1027	      "cs6": {
+    1028	        "value": "CS6",
+    1029	        "selected": 0
+    1030	      },
+    1031	      "cs7": {
+    1032	        "value": "CS7",
+    1033	        "selected": 0
+    1034	      },
+    1035	      "0x0": {
+    1036	        "value": "0x00",
+    1037	        "selected": 0
+    1038	      },
+    1039	      "0x1": {
+    1040	        "value": "0x01",
+    1041	        "selected": 0
+    1042	      },
+    1043	      "0x2": {
+    1044	        "value": "0x02",
+    1045	        "selected": 0
+    1046	      },
+    1047	      "0x3": {
+    1048	        "value": "0x03",
+    1049	        "selected": 0
+    1050	      },
+    1051	      "0x4": {
+    1052	        "value": "0x04",
+    1053	        "selected": 0
+    1054	      },
+    1055	      "0x5": {
+    1056	        "value": "0x05",
+    1057	        "selected": 0
+    1058	      },
+    1059	      "0x6": {
+    1060	        "value": "0x06",
+    1061	        "selected": 0
+    1062	      },
+    1063	      "0x7": {
+    1064	        "value": "0x07",
+    1065	        "selected": 0
+    1066	      },
+    1067	      "0x8": {
+    1068	        "value": "0x08",
+    1069	        "selected": 0
+    1070	      },
+    1071	      "0x9": {
+    1072	        "value": "0x09",
+    1073	        "selected": 0
+    1074	      },
+    1075	      "0xa": {
+    1076	        "value": "0x0A",
+    1077	        "selected": 0
+    1078	      },
+    1079	      "0xb": {
+    1080	        "value": "0x0B",
+    1081	        "selected": 0
+    1082	      },
+    1083	      "0xc": {
+    1084	        "value": "0x0C",
+    1085	        "selected": 0
+    1086	      },
+    1087	      "0xd": {
+    1088	        "value": "0x0D",
+    1089	        "selected": 0
+    1090	      },
+    1091	      "0xe": {
+    1092	        "value": "0x0E",
+    1093	        "selected": 0
+    1094	      },
+    1095	      "0xf": {
+    1096	        "value": "0x0F",
+    1097	        "selected": 0
+    1098	      },
+    1099	      "0x10": {
+    1100	        "value": "0x10",
+    1101	        "selected": 0
+    1102	      },
+    1103	      "0x11": {
+    1104	        "value": "0x11",
+    1105	        "selected": 0
+    1106	      },
+    1107	      "0x12": {
+    1108	        "value": "0x12",
+    1109	        "selected": 0
+    1110	      },
+    1111	      "0x13": {
+    1112	        "value": "0x13",
+    1113	        "selected": 0
+    1114	      },
+    1115	      "0x14": {
+    1116	        "value": "0x14",
+    1117	        "selected": 0
+    1118	      },
+    1119	      "0x15": {
+    1120	        "value": "0x15",
+    1121	        "selected": 0
+    1122	      },
+    1123	      "0x16": {
+    1124	        "value": "0x16",
+    1125	        "selected": 0
+    1126	      },
+    1127	      "0x17": {
+    1128	        "value": "0x17",
+    1129	        "selected": 0
+    1130	      },
+    1131	      "0x18": {
+    1132	        "value": "0x18",
+    1133	        "selected": 0
+    1134	      },
+    1135	      "0x19": {
+    1136	        "value": "0x19",
+    1137	        "selected": 0
+    1138	      },
+    1139	      "0x1a": {
+    1140	        "value": "0x1A",
+    1141	        "selected": 0
+    1142	      },
+    1143	      "0x1b": {
+    1144	        "value": "0x1B",
+    1145	        "selected": 0
+    1146	      },
+    1147	      "0x1c": {
+    1148	        "value": "0x1C",
+    1149	        "selected": 0
+    1150	      },
+    1151	      "0x1d": {
+    1152	        "value": "0x1D",
+    1153	        "selected": 0
+    1154	      },
+    1155	      "0x1e": {
+    1156	        "value": "0x1E",
+    1157	        "selected": 0
+    1158	      },
+    1159	      "0x1f": {
+    1160	        "value": "0x1F",
+    1161	        "selected": 0
+    1162	      },
+    1163	      "0x20": {
+    1164	        "value": "0x20",
+    1165	        "selected": 0
+    1166	      },
+    1167	      "0x21": {
+    1168	        "value": "0x21",
+    1169	        "selected": 0
+    1170	      },
+    1171	      "0x22": {
+    1172	        "value": "0x22",
+    1173	        "selected": 0
+    1174	      },
+    1175	      "0x23": {
+    1176	        "value": "0x23",
+    1177	        "selected": 0
+    1178	      },
+    1179	      "0x24": {
+    1180	        "value": "0x24",
+    1181	        "selected": 0
+    1182	      },
+    1183	      "0x25": {
+    1184	        "value": "0x25",
+    1185	        "selected": 0
+    1186	      },
+    1187	      "0x26": {
+    1188	        "value": "0x26",
+    1189	        "selected": 0
+    1190	      },
+    1191	      "0x27": {
+    1192	        "value": "0x27",
+    1193	        "selected": 0
+    1194	      },
+    1195	      "0x28": {
+    1196	        "value": "0x28",
+    1197	        "selected": 0
+    1198	      },
+    1199	      "0x29": {
+    1200	        "value": "0x29",
+    1201	        "selected": 0
+    1202	      },
+    1203	      "0x2a": {
+    1204	        "value": "0x2A",
+    1205	        "selected": 0
+    1206	      },
+    1207	      "0x2b": {
+    1208	        "value": "0x2B",
+    1209	        "selected": 0
+    1210	      },
+    1211	      "0x2c": {
+    1212	        "value": "0x2C",
+    1213	        "selected": 0
+    1214	      },
+    1215	      "0x2d": {
+    1216	        "value": "0x2D",
+    1217	        "selected": 0
+    1218	      },
+    1219	      "0x2e": {
+    1220	        "value": "0x2E",
+    1221	        "selected": 0
+    1222	      },
+    1223	      "0x2f": {
+    1224	        "value": "0x2F",
+    1225	        "selected": 0
+    1226	      },
+    1227	      "0x30": {
+    1228	        "value": "0x30",
+    1229	        "selected": 0
+    1230	      },
+    1231	      "0x31": {
+    1232	        "value": "0x31",
+    1233	        "selected": 0
+    1234	      },
+    1235	      "0x32": {
+    1236	        "value": "0x32",
+    1237	        "selected": 0
+    1238	      },
+    1239	      "0x33": {
+    1240	        "value": "0x33",
+    1241	        "selected": 0
+    1242	      },
+    1243	      "0x34": {
+    1244	        "value": "0x34",
+    1245	        "selected": 0
+    1246	      },
+    1247	      "0x35": {
+    1248	        "value": "0x35",
+    1249	        "selected": 0
+    1250	      },
+    1251	      "0x36": {
+    1252	        "value": "0x36",
+    1253	        "selected": 0
+    1254	      },
+    1255	      "0x37": {
+    1256	        "value": "0x37",
+    1257	        "selected": 0
+    1258	      },
+    1259	      "0x38": {
+    1260	        "value": "0x38",
+    1261	        "selected": 0
+    1262	      },
+    1263	      "0x39": {
+    1264	        "value": "0x39",
+    1265	        "selected": 0
+    1266	      },
+    1267	      "0x3a": {
+    1268	        "value": "0x3A",
+    1269	        "selected": 0
+    1270	      },
+    1271	      "0x3b": {
+    1272	        "value": "0x3B",
+    1273	        "selected": 0
+    1274	      },
+    1275	      "0x3c": {
+    1276	        "value": "0x3C",
+    1277	        "selected": 0
+    1278	      },
+    1279	      "0x3d": {
+    1280	        "value": "0x3D",
+    1281	        "selected": 0
+    1282	      },
+    1283	      "0x3e": {
+    1284	        "value": "0x3E",
+    1285	        "selected": 0
+    1286	      },
+    1287	      "0x3f": {
+    1288	        "value": "0x3F",
+    1289	        "selected": 0
+    1290	      },
+    1291	      "0x40": {
+    1292	        "value": "0x40",
+    1293	        "selected": 0
+    1294	      },
+    1295	      "0x41": {
+    1296	        "value": "0x41",
+    1297	        "selected": 0
+    1298	      },
+    1299	      "0x42": {
+    1300	        "value": "0x42",
+    1301	        "selected": 0
+    1302	      },
+    1303	      "0x43": {
+    1304	        "value": "0x43",
+    1305	        "selected": 0
+    1306	      },
+    1307	      "0x44": {
+    1308	        "value": "0x44",
+    1309	        "selected": 0
+    1310	      },
+    1311	      "0x45": {
+    1312	        "value": "0x45",
+    1313	        "selected": 0
+    1314	      },
+    1315	      "0x46": {
+    1316	        "value": "0x46",
+    1317	        "selected": 0
+    1318	      },
+    1319	      "0x47": {
+    1320	        "value": "0x47",
+    1321	        "selected": 0
+    1322	      },
+    1323	      "0x48": {
+    1324	        "value": "0x48",
+    1325	        "selected": 0
+    1326	      },
+    1327	      "0x49": {
+    1328	        "value": "0x49",
+    1329	        "selected": 0
+    1330	      },
+    1331	      "0x4a": {
+    1332	        "value": "0x4A",
+    1333	        "selected": 0
+    1334	      },
+    1335	      "0x4b": {
+    1336	        "value": "0x4B",
+    1337	        "selected": 0
+    1338	      },
+    1339	      "0x4c": {
+    1340	        "value": "0x4C",
+    1341	        "selected": 0
+    1342	      },
+    1343	      "0x4d": {
+    1344	        "value": "0x4D",
+    1345	        "selected": 0
+    1346	      },
+    1347	      "0x4e": {
+    1348	        "value": "0x4E",
+    1349	        "selected": 0
+    1350	      },
+    1351	      "0x4f": {
+    1352	        "value": "0x4F",
+    1353	        "selected": 0
+    1354	      },
+    1355	      "0x50": {
+    1356	        "value": "0x50",
+    1357	        "selected": 0
+    1358	      },
+    1359	      "0x51": {
+    1360	        "value": "0x51",
+    1361	        "selected": 0
+    1362	      },
+    1363	      "0x52": {
+    1364	        "value": "0x52",
+    1365	        "selected": 0
+    1366	      },
+    1367	      "0x53": {
+    1368	        "value": "0x53",
+    1369	        "selected": 0
+    1370	      },
+    1371	      "0x54": {
+    1372	        "value": "0x54",
+    1373	        "selected": 0
+    1374	      },
+    1375	      "0x55": {
+    1376	        "value": "0x55",
+    1377	        "selected": 0
+    1378	      },
+    1379	      "0x56": {
+    1380	        "value": "0x56",
+    1381	        "selected": 0
+    1382	      },
+    1383	      "0x57": {
+    1384	        "value": "0x57",
+    1385	        "selected": 0
+    1386	      },
+    1387	      "0x58": {
+    1388	        "value": "0x58",
+    1389	        "selected": 0
+    1390	      },
+    1391	      "0x59": {
+    1392	        "value": "0x59",
+    1393	        "selected": 0
+    1394	      },
+    1395	      "0x5a": {
+    1396	        "value": "0x5A",
+    1397	        "selected": 0
+    1398	      },
+    1399	      "0x5b": {
+    1400	        "value": "0x5B",
+    1401	        "selected": 0
+    1402	      },
+    1403	      "0x5c": {
+    1404	        "value": "0x5C",
+    1405	        "selected": 0
+    1406	      },
+    1407	      "0x5d": {
+    1408	        "value": "0x5D",
+    1409	        "selected": 0
+    1410	      },
+    1411	      "0x5e": {
+    1412	        "value": "0x5E",
+    1413	        "selected": 0
+    1414	      },
+    1415	      "0x5f": {
+    1416	        "value": "0x5F",
+    1417	        "selected": 0
+    1418	      },
+    1419	      "0x60": {
+    1420	        "value": "0x60",
+    1421	        "selected": 0
+    1422	      },
+    1423	      "0x61": {
+    1424	        "value": "0x61",
+    1425	        "selected": 0
+    1426	      },
+    1427	      "0x62": {
+    1428	        "value": "0x62",
+    1429	        "selected": 0
+    1430	      },
+    1431	      "0x63": {
+    1432	        "value": "0x63",
+    1433	        "selected": 0
+    1434	      },
+    1435	      "0x64": {
+    1436	        "value": "0x64",
+    1437	        "selected": 0
+    1438	      },
+    1439	      "0x65": {
+    1440	        "value": "0x65",
+    1441	        "selected": 0
+    1442	      },
+    1443	      "0x66": {
+    1444	        "value": "0x66",
+    1445	        "selected": 0
+    1446	      },
+    1447	      "0x67": {
+    1448	        "value": "0x67",
+    1449	        "selected": 0
+    1450	      },
+    1451	      "0x68": {
+    1452	        "value": "0x68",
+    1453	        "selected": 0
+    1454	      },
+    1455	      "0x69": {
+    1456	        "value": "0x69",
+    1457	        "selected": 0
+    1458	      },
+    1459	      "0x6a": {
+    1460	        "value": "0x6A",
+    1461	        "selected": 0
+    1462	      },
+    1463	      "0x6b": {
+    1464	        "value": "0x6B",
+    1465	        "selected": 0
+    1466	      },
+    1467	      "0x6c": {
+    1468	        "value": "0x6C",
+    1469	        "selected": 0
+    1470	      },
+    1471	      "0x6d": {
+    1472	        "value": "0x6D",
+    1473	        "selected": 0
+    1474	      },
+    1475	      "0x6e": {
+    1476	        "value": "0x6E",
+    1477	        "selected": 0
+    1478	      },
+    1479	      "0x6f": {
+    1480	        "value": "0x6F",
+    1481	        "selected": 0
+    1482	      },
+    1483	      "0x70": {
+    1484	        "value": "0x70",
+    1485	        "selected": 0
+    1486	      },
+    1487	      "0x71": {
+    1488	        "value": "0x71",
+    1489	        "selected": 0
+    1490	      },
+    1491	      "0x72": {
+    1492	        "value": "0x72",
+    1493	        "selected": 0
+    1494	      },
+    1495	      "0x73": {
+    1496	        "value": "0x73",
+    1497	        "selected": 0
+    1498	      },
+    1499	      "0x74": {
+    1500	        "value": "0x74",
+    1501	        "selected": 0
+    1502	      },
+    1503	      "0x75": {
+    1504	        "value": "0x75",
+    1505	        "selected": 0
+    1506	      },
+    1507	      "0x76": {
+    1508	        "value": "0x76",
+    1509	        "selected": 0
+    1510	      },
+    1511	      "0x77": {
+    1512	        "value": "0x77",
+    1513	        "selected": 0
+    1514	      },
+    1515	      "0x78": {
+    1516	        "value": "0x78",
+    1517	        "selected": 0
+    1518	      },
+    1519	      "0x79": {
+    1520	        "value": "0x79",
+    1521	        "selected": 0
+    1522	      },
+    1523	      "0x7a": {
+    1524	        "value": "0x7A",
+    1525	        "selected": 0
+    1526	      },
+    1527	      "0x7b": {
+    1528	        "value": "0x7B",
+    1529	        "selected": 0
+    1530	      },
+    1531	      "0x7c": {
+    1532	        "value": "0x7C",
+    1533	        "selected": 0
+    1534	      },
+    1535	      "0x7d": {
+    1536	        "value": "0x7D",
+    1537	        "selected": 0
+    1538	      },
+    1539	      "0x7e": {
+    1540	        "value": "0x7E",
+    1541	        "selected": 0
+    1542	      },
+    1543	      "0x7f": {
+    1544	        "value": "0x7F",
+    1545	        "selected": 0
+    1546	      },
+    1547	      "0x80": {
+    1548	        "value": "0x80",
+    1549	        "selected": 0
+    1550	      },
+    1551	      "0x81": {
+    1552	        "value": "0x81",
+    1553	        "selected": 0
+    1554	      },
+    1555	      "0x82": {
+    1556	        "value": "0x82",
+    1557	        "selected": 0
+    1558	      },
+    1559	      "0x83": {
+    1560	        "value": "0x83",
+    1561	        "selected": 0
+    1562	      },
+    1563	      "0x84": {
+    1564	        "value": "0x84",
+    1565	        "selected": 0
+    1566	      },
+    1567	      "0x85": {
+    1568	        "value": "0x85",
+    1569	        "selected": 0
+    1570	      },
+    1571	      "0x86": {
+    1572	        "value": "0x86",
+    1573	        "selected": 0
+    1574	      },
+    1575	      "0x87": {
+    1576	        "value": "0x87",
+    1577	        "selected": 0
+    1578	      },
+    1579	      "0x88": {
+    1580	        "value": "0x88",
+    1581	        "selected": 0
+    1582	      },
+    1583	      "0x89": {
+    1584	        "value": "0x89",
+    1585	        "selected": 0
+    1586	      },
+    1587	      "0x8a": {
+    1588	        "value": "0x8A",
+    1589	        "selected": 0
+    1590	      },
+    1591	      "0x8b": {
+    1592	        "value": "0x8B",
+    1593	        "selected": 0
+    1594	      },
+    1595	      "0x8c": {
+    1596	        "value": "0x8C",
+    1597	        "selected": 0
+    1598	      },
+    1599	      "0x8d": {
+    1600	        "value": "0x8D",
+    1601	        "selected": 0
+    1602	      },
+    1603	      "0x8e": {
+    1604	        "value": "0x8E",
+    1605	        "selected": 0
+    1606	      },
+    1607	      "0x8f": {
+    1608	        "value": "0x8F",
+    1609	        "selected": 0
+    1610	      },
+    1611	      "0x90": {
+    1612	        "value": "0x90",
+    1613	        "selected": 0
+    1614	      },
+    1615	      "0x91": {
+    1616	        "value": "0x91",
+    1617	        "selected": 0
+    1618	      },
+    1619	      "0x92": {
+    1620	        "value": "0x92",
+    1621	        "selected": 0
+    1622	      },
+    1623	      "0x93": {
+    1624	        "value": "0x93",
+    1625	        "selected": 0
+    1626	      },
+    1627	      "0x94": {
+    1628	        "value": "0x94",
+    1629	        "selected": 0
+    1630	      },
+    1631	      "0x95": {
+    1632	        "value": "0x95",
+    1633	        "selected": 0
+    1634	      },
+    1635	      "0x96": {
+    1636	        "value": "0x96",
+    1637	        "selected": 0
+    1638	      },
+    1639	      "0x97": {
+    1640	        "value": "0x97",
+    1641	        "selected": 0
+    1642	      },
+    1643	      "0x98": {
+    1644	        "value": "0x98",
+    1645	        "selected": 0
+    1646	      },
+    1647	      "0x99": {
+    1648	        "value": "0x99",
+    1649	        "selected": 0
+    1650	      },
+    1651	      "0x9a": {
+    1652	        "value": "0x9A",
+    1653	        "selected": 0
+    1654	      },
+    1655	      "0x9b": {
+    1656	        "value": "0x9B",
+    1657	        "selected": 0
+    1658	      },
+    1659	      "0x9c": {
+    1660	        "value": "0x9C",
+    1661	        "selected": 0
+    1662	      },
+    1663	      "0x9d": {
+    1664	        "value": "0x9D",
+    1665	        "selected": 0
+    1666	      },
+    1667	      "0x9e": {
+    1668	        "value": "0x9E",
+    1669	        "selected": 0
+    1670	      },
+    1671	      "0x9f": {
+    1672	        "value": "0x9F",
+    1673	        "selected": 0
+    1674	      },
+    1675	      "0xa0": {
+    1676	        "value": "0xA0",
+    1677	        "selected": 0
+    1678	      },
+    1679	      "0xa1": {
+    1680	        "value": "0xA1",
+    1681	        "selected": 0
+    1682	      },
+    1683	      "0xa2": {
+    1684	        "value": "0xA2",
+    1685	        "selected": 0
+    1686	      },
+    1687	      "0xa3": {
+    1688	        "value": "0xA3",
+    1689	        "selected": 0
+    1690	      },
+    1691	      "0xa4": {
+    1692	        "value": "0xA4",
+    1693	        "selected": 0
+    1694	      },
+    1695	      "0xa5": {
+    1696	        "value": "0xA5",
+    1697	        "selected": 0
+    1698	      },
+    1699	      "0xa6": {
+    1700	        "value": "0xA6",
+    1701	        "selected": 0
+    1702	      },
+    1703	      "0xa7": {
+    1704	        "value": "0xA7",
+    1705	        "selected": 0
+    1706	      },
+    1707	      "0xa8": {
+    1708	        "value": "0xA8",
+    1709	        "selected": 0
+    1710	      },
+    1711	      "0xa9": {
+    1712	        "value": "0xA9",
+    1713	        "selected": 0
+    1714	      },
+    1715	      "0xaa": {
+    1716	        "value": "0xAA",
+    1717	        "selected": 0
+    1718	      },
+    1719	      "0xab": {
+    1720	        "value": "0xAB",
+    1721	        "selected": 0
+    1722	      },
+    1723	      "0xac": {
+    1724	        "value": "0xAC",
+    1725	        "selected": 0
+    1726	      },
+    1727	      "0xad": {
+    1728	        "value": "0xAD",
+    1729	        "selected": 0
+    1730	      },
+    1731	      "0xae": {
+    1732	        "value": "0xAE",
+    1733	        "selected": 0
+    1734	      },
+    1735	      "0xaf": {
+    1736	        "value": "0xAF",
+    1737	        "selected": 0
+    1738	      },
+    1739	      "0xb0": {
+    1740	        "value": "0xB0",
+    1741	        "selected": 0
+    1742	      },
+    1743	      "0xb1": {
+    1744	        "value": "0xB1",
+    1745	        "selected": 0
+    1746	      },
+    1747	      "0xb2": {
+    1748	        "value": "0xB2",
+    1749	        "selected": 0
+    1750	      },
+    1751	      "0xb3": {
+    1752	        "value": "0xB3",
+    1753	        "selected": 0
+    1754	      },
+    1755	      "0xb4": {
+    1756	        "value": "0xB4",
+    1757	        "selected": 0
+    1758	      },
+    1759	      "0xb5": {
+    1760	        "value": "0xB5",
+    1761	        "selected": 0
+    1762	      },
+    1763	      "0xb6": {
+    1764	        "value": "0xB6",
+    1765	        "selected": 0
+    1766	      },
+    1767	      "0xb7": {
+    1768	        "value": "0xB7",
+    1769	        "selected": 0
+    1770	      },
+    1771	      "0xb8": {
+    1772	        "value": "0xB8",
+    1773	        "selected": 0
+    1774	      },
+    1775	      "0xb9": {
+    1776	        "value": "0xB9",
+    1777	        "selected": 0
+    1778	      },
+    1779	      "0xba": {
+    1780	        "value": "0xBA",
+    1781	        "selected": 0
+    1782	      },
+    1783	      "0xbb": {
+    1784	        "value": "0xBB",
+    1785	        "selected": 0
+    1786	      },
+    1787	      "0xbc": {
+    1788	        "value": "0xBC",
+    1789	        "selected": 0
+    1790	      },
+    1791	      "0xbd": {
+    1792	        "value": "0xBD",
+    1793	        "selected": 0
+    1794	      },
+    1795	      "0xbe": {
+    1796	        "value": "0xBE",
+    1797	        "selected": 0
+    1798	      },
+    1799	      "0xbf": {
+    1800	        "value": "0xBF",
+    1801	        "selected": 0
+    1802	      },
+    1803	      "0xc0": {
+    1804	        "value": "0xC0",
+    1805	        "selected": 0
+    1806	      },
+    1807	      "0xc1": {
+    1808	        "value": "0xC1",
+    1809	        "selected": 0
+    1810	      },
+    1811	      "0xc2": {
+    1812	        "value": "0xC2",
+    1813	        "selected": 0
+    1814	      },
+    1815	      "0xc3": {
+    1816	        "value": "0xC3",
+    1817	        "selected": 0
+    1818	      },
+    1819	      "0xc4": {
+    1820	        "value": "0xC4",
+    1821	        "selected": 0
+    1822	      },
+    1823	      "0xc5": {
+    1824	        "value": "0xC5",
+    1825	        "selected": 0
+    1826	      },
+    1827	      "0xc6": {
+    1828	        "value": "0xC6",
+    1829	        "selected": 0
+    1830	      },
+    1831	      "0xc7": {
+    1832	        "value": "0xC7",
+    1833	        "selected": 0
+    1834	      },
+    1835	      "0xc8": {
+    1836	        "value": "0xC8",
+    1837	        "selected": 0
+    1838	      },
+    1839	      "0xc9": {
+    1840	        "value": "0xC9",
+    1841	        "selected": 0
+    1842	      },
+    1843	      "0xca": {
+    1844	        "value": "0xCA",
+    1845	        "selected": 0
+    1846	      },
+    1847	      "0xcb": {
+    1848	        "value": "0xCB",
+    1849	        "selected": 0
+    1850	      },
+    1851	      "0xcc": {
+    1852	        "value": "0xCC",
+    1853	        "selected": 0
+    1854	      },
+    1855	      "0xcd": {
+    1856	        "value": "0xCD",
+    1857	        "selected": 0
+    1858	      },
+    1859	      "0xce": {
+    1860	        "value": "0xCE",
+    1861	        "selected": 0
+    1862	      },
+    1863	      "0xcf": {
+    1864	        "value": "0xCF",
+    1865	        "selected": 0
+    1866	      },
+    1867	      "0xd0": {
+    1868	        "value": "0xD0",
+    1869	        "selected": 0
+    1870	      },
+    1871	      "0xd1": {
+    1872	        "value": "0xD1",
+    1873	        "selected": 0
+    1874	      },
+    1875	      "0xd2": {
+    1876	        "value": "0xD2",
+    1877	        "selected": 0
+    1878	      },
+    1879	      "0xd3": {
+    1880	        "value": "0xD3",
+    1881	        "selected": 0
+    1882	      },
+    1883	      "0xd4": {
+    1884	        "value": "0xD4",
+    1885	        "selected": 0
+    1886	      },
+    1887	      "0xd5": {
+    1888	        "value": "0xD5",
+    1889	        "selected": 0
+    1890	      },
+    1891	      "0xd6": {
+    1892	        "value": "0xD6",
+    1893	        "selected": 0
+    1894	      },
+    1895	      "0xd7": {
+    1896	        "value": "0xD7",
+    1897	        "selected": 0
+    1898	      },
+    1899	      "0xd8": {
+    1900	        "value": "0xD8",
+    1901	        "selected": 0
+    1902	      },
+    1903	      "0xd9": {
+    1904	        "value": "0xD9",
+    1905	        "selected": 0
+    1906	      },
+    1907	      "0xda": {
+    1908	        "value": "0xDA",
+    1909	        "selected": 0
+    1910	      },
+    1911	      "0xdb": {
+    1912	        "value": "0xDB",
+    1913	        "selected": 0
+    1914	      },
+    1915	      "0xdc": {
+    1916	        "value": "0xDC",
+    1917	        "selected": 0
+    1918	      },
+    1919	      "0xdd": {
+    1920	        "value": "0xDD",
+    1921	        "selected": 0
+    1922	      },
+    1923	      "0xde": {
+    1924	        "value": "0xDE",
+    1925	        "selected": 0
+    1926	      },
+    1927	      "0xdf": {
+    1928	        "value": "0xDF",
+    1929	        "selected": 0
+    1930	      },
+    1931	      "0xe0": {
+    1932	        "value": "0xE0",
+    1933	        "selected": 0
+    1934	      },
+    1935	      "0xe1": {
+    1936	        "value": "0xE1",
+    1937	        "selected": 0
+    1938	      },
+    1939	      "0xe2": {
+    1940	        "value": "0xE2",
+    1941	        "selected": 0
+    1942	      },
+    1943	      "0xe3": {
+    1944	        "value": "0xE3",
+    1945	        "selected": 0
+    1946	      },
+    1947	      "0xe4": {
+    1948	        "value": "0xE4",
+    1949	        "selected": 0
+    1950	      },
+    1951	      "0xe5": {
+    1952	        "value": "0xE5",
+    1953	        "selected": 0
+    1954	      },
+    1955	      "0xe6": {
+    1956	        "value": "0xE6",
+    1957	        "selected": 0
+    1958	      },
+    1959	      "0xe7": {
+    1960	        "value": "0xE7",
+    1961	        "selected": 0
+    1962	      },
+    1963	      "0xe8": {
+    1964	        "value": "0xE8",
+    1965	        "selected": 0
+    1966	      },
+    1967	      "0xe9": {
+    1968	        "value": "0xE9",
+    1969	        "selected": 0
+    1970	      },
+    1971	      "0xea": {
+    1972	        "value": "0xEA",
+    1973	        "selected": 0
+    1974	      },
+    1975	      "0xeb": {
+    1976	        "value": "0xEB",
+    1977	        "selected": 0
+    1978	      },
+    1979	      "0xec": {
+    1980	        "value": "0xEC",
+    1981	        "selected": 0
+    1982	      },
+    1983	      "0xed": {
+    1984	        "value": "0xED",
+    1985	        "selected": 0
+    1986	      },
+    1987	      "0xee": {
+    1988	        "value": "0xEE",
+    1989	        "selected": 0
+    1990	      },
+    1991	      "0xef": {
+    1992	        "value": "0xEF",
+    1993	        "selected": 0
+    1994	      },
+    1995	      "0xf0": {
+    1996	        "value": "0xF0",
+    1997	        "selected": 0
+    1998	      },
+    1999	      "0xf1": {
+    2000	        "value": "0xF1",
+    2001	        "selected": 0
+    2002	      },
+    2003	      "0xf2": {
+    2004	        "value": "0xF2",
+    2005	        "selected": 0
+    2006	      },
+    2007	      "0xf3": {
+    2008	        "value": "0xF3",
+    2009	        "selected": 0
+    2010	      },
+    2011	      "0xf4": {
+    2012	        "value": "0xF4",
+    2013	        "selected": 0
+    2014	      },
+    2015	      "0xf5": {
+    2016	        "value": "0xF5",
+    2017	        "selected": 0
+    2018	      },
+    2019	      "0xf6": {
+    2020	        "value": "0xF6",
+    2021	        "selected": 0
+    2022	      },
+    2023	      "0xf7": {
+    2024	        "value": "0xF7",
+    2025	        "selected": 0
+    2026	      },
+    2027	      "0xf8": {
+    2028	        "value": "0xF8",
+    2029	        "selected": 0
+    2030	      },
+    2031	      "0xf9": {
+    2032	        "value": "0xF9",
+    2033	        "selected": 0
+    2034	      },
+    2035	      "0xfa": {
+    2036	        "value": "0xFA",
+    2037	        "selected": 0
+    2038	      },
+    2039	      "0xfb": {
+    2040	        "value": "0xFB",
+    2041	        "selected": 0
+    2042	      },
+    2043	      "0xfc": {
+    2044	        "value": "0xFC",
+    2045	        "selected": 0
+    2046	      },
+    2047	      "0xfd": {
+    2048	        "value": "0xFD",
+    2049	        "selected": 0
+    2050	      },
+    2051	      "0xfe": {
+    2052	        "value": "0xFE",
+    2053	        "selected": 0
+    2054	      },
+    2055	      "0xff": {
+    2056	        "value": "0xFF",
+    2057	        "selected": 0
+    2058	      }
+    2059	    },
+    2060	    "shaper1": {
+    2061	      "": {
+    2062	        "value": "None",
+    2063	        "selected": 1
+    2064	      }
+    2065	    },
+    2066	    "shaper2": {
+    2067	      "": {
+    2068	        "value": "None",
+    2069	        "selected": 1
+    2070	      }
+    2071	    },
+    2072	    "description": "192.168.87.52 reject memos"
+    2073	  }
+    2074	}
+
+------------------------------ tests/test_firewall_agent.py ------------------------------
+       1	import itertools
+       2	import json
+       3	import threading
+       4	import time
+       5	from typing import Dict, Any
+       6	
+       7	import pytest
+       8	from fastapi.testclient import TestClient
+       9	from sqlalchemy import create_engine
+      10	from sqlalchemy.orm import sessionmaker
+      11	
+      12	import firewall_agent
+      13	from firewall_agent import (
+      14	    app,
+      15	    Base,
+      16	    RuleDB,
+      17	    AliasDB,
+      18	    ReverseProxyDB,
+      19	    PREFIX,
+      20	    create_opnsense_alias,
+      21	    sync_firewall_rules,
+      22	    monitor_firewall,
+      23	)
+      24	from fastapi import HTTPException
+      25	
+      26	# Predictable UUID generator for deterministic tests
+      27	_uuid_counter = itertools.count(1)
+      28	def fake_uuid(name: str) -> str:
+      29	    return f"uuid-{next(_uuid_counter)}-{name}"
+      30	
+      31	# Minimal fake HTTP Response
+      32	class FakeResp:
+      33	    def __init__(self, data: Dict[str, Any], status: int = 200):
+      34	        self._data = data
+      35	        self.status_code = status
+      36	        self.text = json.dumps(data)
+      37	
+      38	    def json(self):
+      39	        return self._data
+      40	
+      41	    def raise_for_status(self):
+      42	        if not (200 <= self.status_code < 300):
+      43	            raise Exception(f"HTTP {self.status_code}")
+      44	
+      45	# Test fixture: isolated DB and stub for alias creation
+      46	@pytest.fixture(autouse=True)
+      47	def client(tmp_path, monkeypatch):
+      48	    db_file = tmp_path / "test.db"
+      49	    engine = create_engine(f"sqlite:///{db_file}", connect_args={"check_same_thread": False})
+      50	    TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+      51	    Base.metadata.create_all(bind=engine)
+      52	    monkeypatch.setattr(firewall_agent, "engine", engine)
+      53	    monkeypatch.setattr(firewall_agent, "SessionLocal", TestingSession)
+      54	    monkeypatch.setattr(firewall_agent, "create_opnsense_alias", lambda svc: fake_uuid(svc))
+      55	    return TestClient(app)
+      56	
+      57	# create_opnsense_alias helper
+      58	def test_create_opnsense_alias_success(monkeypatch):
+      59	    called = {}
+      60	    def fake_post(url, auth=None, json=None, timeout=None):
+      61	        called['url'] = url
+      62	        called['json'] = json
+      63	        return FakeResp({"result": "saved", "uuid": "my-uuid"})
+      64	    monkeypatch.setattr(firewall_agent.requests, "post", fake_post)
+      65	    uid = create_opnsense_alias("svc")
+      66	    assert uid == "my-uuid"
+      67	    assert PREFIX in called['json']['alias']['name']
+      68	
+      69	def test_create_opnsense_alias_http_error(monkeypatch):
+      70	    monkeypatch.setattr(firewall_agent.requests, "post", lambda *a, **k: FakeResp({}, 500))
+      71	    with pytest.raises(HTTPException) as exc:
+      72	        create_opnsense_alias("svc")
+      73	    assert exc.value.status_code == 502
+      74	
+      75	def test_create_opnsense_alias_bad_payload(monkeypatch):
+      76	    monkeypatch.setattr(firewall_agent.requests, "post", lambda *a, **k: FakeResp({"result": "ok"}))
+      77	    with pytest.raises(HTTPException):
+      78	        create_opnsense_alias("svc")
+      79	
+      80	# Reverse-Proxy API CRUD and validation
+      81	def test_reverse_proxy_crud_and_validation(client):
+      82	    rp_uuid = fake_uuid("rp")
+      83	    valid_payload = {
+      84	        "uuid": rp_uuid,
+      85	        "name": "rp1",
+      86	        "ip": "1.2.3.4",
+      87	        "ports": [80, 443],
+      88	        "allowed_ips": ["0.0.0.0/0"],
+      89	    }
+      90	
+      91	    resp = client.post("/reverse_proxies", json=valid_payload)
+      92	    assert resp.status_code == 200
+      93	
+      94	    resp = client.post("/reverse_proxies", json=valid_payload)
+      95	    assert resp.status_code == 400
+      96	
+      97	    invalid_cases = [
+      98	        {"name": None},
+      99	        {"ip": "bad"},
+     100	        {"ports": []},
+     101	        {"allowed_ips": []},
+     102	    ]
+     103	    for override in invalid_cases:
+     104	        payload = {**valid_payload, "uuid": fake_uuid("rp"), **override}
+     105	        r = client.post("/reverse_proxies", json=payload)
+     106	        assert r.status_code == 422
+     107	
+     108	    assert client.put("/reverse_proxies/notfound", json=valid_payload).status_code == 404
+     109	
+     110	    updated_payload = {**valid_payload, "name": "rp2", "ip": "2.2.2.2", "ports": [8080], "allowed_ips": ["10.0.0.0/8"]}
+     111	    r = client.put(f"/reverse_proxies/{rp_uuid}", json=updated_payload)
+     112	    assert r.status_code == 200
+     113	    rp = client.get("/reverse_proxies").json()[0]
+     114	    assert rp["name"] == "rp2"
+     115	
+     116	    assert client.delete("/reverse_proxies/none").status_code == 404
+     117	
+     118	    assert client.delete(f"/reverse_proxies/{rp_uuid}").status_code == 200
+     119	    assert client.get("/reverse_proxies").json() == []
+     120	
+     121	# ReverseProxy serializer: cover field_serializer for ports and allowed_ips
+     122	def test_reverseproxy_serializer_ports_and_ips():
+     123	    from firewall_agent import ReverseProxy
+     124	    model = ReverseProxy(
+     125	        uuid="abc-123",
+     126	        name="rp",
+     127	        ip="1.2.3.4",
+     128	        ports=[80, 443],
+     129	        allowed_ips=["10.0.0.0/24"]
+     130	    )
+     131	    json_str = model.model_dump_json()
+     132	    data = json.loads(json_str)
+     133	    assert data["ports"] == [80, 443]
+     134	    assert data["allowed_ips"] == ["10.0.0.0/24"]
+     135	
+     136	# Alias CRUD and validation
+     137	def test_alias_missing_field_and_errors(client):
+     138	    assert client.post("/aliases", json={}).status_code == 422
+     139	    assert client.put("/aliases/none", json={"service_name": "x"}).status_code == 404
+     140	    assert client.delete("/aliases/none").status_code == 404
+     141	
+     142	def test_alias_crud(client):
+     143	    r = client.post("/aliases", json={"service_name": "foo"})
+     144	    aid = r.json()["id"]
+     145	    assert any(a["id"] == aid for a in client.get("/aliases").json())
+     146	    r = client.put(f"/aliases/{aid}", json={"service_name": "bar"})
+     147	    assert r.status_code == 200
+     148	    assert any(a["service_name"] == "bar" for a in client.get("/aliases").json())
+     149	    r = client.delete(f"/aliases/{aid}")
+     150	    assert r.status_code == 200
+     151	    assert all(a["id"] != aid for a in client.get("/aliases").json())
+     152	
+     153	# Rules listing and hash behavior
+     154	def test_rules_and_hash_empty(client):
+     155	    assert client.get("/rules").json() == []
+     156	    assert isinstance(client.get("/rules/hash").json()["hash"], int)
+     157	
+     158	def test_rules_list_with_missing_alias(client):
+     159	    db = firewall_agent.SessionLocal()
+     160	    db.add(RuleDB(
+     161	        firewall_rule_uuid="fw-missing-1",
+     162	        action="pass",
+     163	        src_ip="1.1.1.1",
+     164	        dest_alias_id="missing"
+     165	    ))
+     166	    db.commit(); db.close()
+     167	    r = client.get("/rules").json()
+     168	    assert r and r[0]["service_name"] is None
+     169	
+     170	def test_rules_hash_changes_and_order(client):
+     171	    db = firewall_agent.SessionLocal()
+     172	    db.query(RuleDB).delete()
+     173	    for idx, ip in enumerate(["1.1.1.1", "2.2.2.2"], start=1):
+     174	        db.add(RuleDB(
+     175	            firewall_rule_uuid=f"fw-{idx}",
+     176	            action="pass",
+     177	            src_ip=ip,
+     178	            dest_alias_id="none"
+     179	        ))
+     180	    db.commit(); db.close()
+     181	    h1 = client.get("/rules/hash").json()["hash"]
+     182	
+     183	    db = firewall_agent.SessionLocal()
+     184	    db.query(RuleDB).delete()
+     185	    for idx, ip in enumerate(["2.2.2.2", "1.1.1.1"], start=1):
+     186	        db.add(RuleDB(
+     187	            firewall_rule_uuid=f"fw-{idx}",
+     188	            action="pass",
+     189	            src_ip=ip,
+     190	            dest_alias_id="none"
+     191	        ))
+     192	    db.commit(); db.close()
+     193	    h2 = client.get("/rules/hash").json()["hash"]
+     194	    assert h1 == h2
+     195	
+     196	# sync_firewall_rules: coverage tests for all branches
+     197	def test_sync_ignores_non_prefixed_dest(client, monkeypatch):
+     198	    monkeypatch.setattr(firewall_agent.requests, "get",
+     199	        lambda url, **k:
+     200	            FakeResp({"rows":[{"uuid":"u1","enabled":"1"}]})
+     201	            if "search_rule" in url
+     202	            else FakeResp({"rule":{"action":{"pass":{"selected":1}},"source_net":"1.1.1.1","destination_net":"no-prefix"}})
+     203	    )
+     204	    sync_firewall_rules()
+     205	
+     206	def test_sync_skips_when_alias_not_found(client, monkeypatch):
+     207	    monkeypatch.setattr(firewall_agent.requests, "get",
+     208	        lambda url, **k:
+     209	            FakeResp({"rows":[{"uuid":"u1","enabled":"1"}]})
+     210	            if "search_rule" in url
+     211	            else FakeResp({"rule":{"action":{"pass":{"selected":1}},"source_net":"1.1.1.1","destination_net":f"{PREFIX}noexist"}})
+     212	    )
+     213	    sync_firewall_rules()
+     214	
+     215	def test_sync_inserts_new_rule(client, monkeypatch):
+     216	    client.post("/aliases", json={"service_name": "svc"})
+     217	    monkeypatch.setattr(firewall_agent.requests, "get",
+     218	        lambda url, **k:
+     219	            FakeResp({"rows":[{"uuid":"u1","enabled":"1"}]})
+     220	            if "search_rule" in url
+     221	            else FakeResp({"rule":{"action":{"block":{"selected":1}},"source_net":"5.5.5.5","destination_net":f"{PREFIX}svc"}})
+     222	    )
+     223	    sync_firewall_rules()
+     224	    assert any(r["src_ip"] == "5.5.5.5" for r in client.get("/rules").json())
+     225	
+     226	def test_sync_deletes_disabled_rule(client, monkeypatch):
+     227	    client.post("/aliases", json={"service_name": "svc"})
+     228	    db = firewall_agent.SessionLocal()
+     229	    alias = db.query(AliasDB).filter_by(service_name="svc").first()
+     230	    db.add(RuleDB(
+     231	        firewall_rule_uuid="u1",
+     232	        action="pass",
+     233	        src_ip="6.6.6.6",
+     234	        dest_alias_id=alias.id
+     235	    ))
+     236	    db.commit(); db.close()
+     237	
+     238	    monkeypatch.setattr(firewall_agent.requests, "get",
+     239	        lambda url, **k:
+     240	            FakeResp({"rows":[{"uuid":"u1","enabled":"0"}]})
+     241	            if "search_rule" in url
+     242	            else FakeResp({"rule":{"action":{"pass":{"selected":1}},"source_net":"6.6.6.6","destination_net":f"{PREFIX}svc"}})
+     243	    )
+     244	    sync_firewall_rules()
+     245	    assert all(r["src_ip"] != "6.6.6.6" for r in client.get("/rules").json())
+     246	
+     247	def test_sync_handles_exception(monkeypatch):
+     248	    monkeypatch.setattr(firewall_agent.requests, "get", lambda *a, **k: (_ for _ in ()).throw(Exception("fail")))
+     249	    sync_firewall_rules()
+     250	
+     251	# monitor_firewall and __main__ entrypoint
+     252	def test_monitor_firewall_runs(monkeypatch):
+     253	    calls = []
+     254	    monkeypatch.setattr(firewall_agent, "sync_firewall_rules", lambda: calls.append(1))
+     255	    stop_event = threading.Event()
+     256	    t = threading.Thread(target=monitor_firewall, kwargs={"interval": 0.01, "stop_event": stop_event})
+     257	    t.start()
+     258	    time.sleep(0.05)
+     259	    stop_event.set()
+     260	    t.join()
+     261	    assert len(calls) >= 2
+
+============================== DONE ==============================
