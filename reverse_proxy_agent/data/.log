@@ -1,0 +1,176 @@
+2025-05-19 19:33:44,729 [INFO] __main__: Settings loaded successfully
+2025-05-19 19:34:39,056 [INFO] __main__: Settings loaded successfully
+2025-05-19 19:34:39,056 [INFO] __main__: DB_PATH=PosixPath('data/db.sqlite') CONFIG_DIR=PosixPath('../nginx/auto.d') CORE_URL=AnyHttpUrl('http://192.168.87.10:8001/') AGENT_URL=AnyHttpUrl('http://192.168.87.10:8002/') REVERSE_PROXY_IP='192.168.87.10' REVERSE_PROXY_PORTS=[80, 443] AGENT_NAME='nginx' CALLBACK_PATH='/registrations' PROXY_BACKEND='nginx' TIMEOUT=5 INTERNAL_HOST='0.0.0.0' INTERNAL_PORT=8002 RELOAD=False LOG_FILE_PATH=PosixPath('data/.log')
+2025-05-19 19:35:01,826 [INFO] __main__: Settings loaded successfully
+2025-05-19 19:35:01,826 [INFO] __main__: {'DB_PATH': PosixPath('data/db.sqlite'), 'CONFIG_DIR': PosixPath('../nginx/auto.d'), 'CORE_URL': AnyHttpUrl('http://192.168.87.10:8001/'), 'AGENT_URL': AnyHttpUrl('http://192.168.87.10:8002/'), 'REVERSE_PROXY_IP': '192.168.87.10', 'REVERSE_PROXY_PORTS': [80, 443], 'AGENT_NAME': 'nginx', 'CALLBACK_PATH': '/registrations', 'PROXY_BACKEND': 'nginx', 'TIMEOUT': 5, 'INTERNAL_HOST': '0.0.0.0', 'INTERNAL_PORT': 8002, 'RELOAD': False, 'LOG_FILE_PATH': PosixPath('data/.log')}
+2025-05-19 19:35:47,039 [INFO] __main__: Settings loaded successfully
+2025-05-19 19:35:47,041 [INFO] __main__: {
+  "DB_PATH": "data/db.sqlite",
+  "CONFIG_DIR": "../nginx/auto.d",
+  "CORE_URL": "http://192.168.87.10:8001/",
+  "AGENT_URL": "http://192.168.87.10:8002/",
+  "REVERSE_PROXY_IP": "192.168.87.10",
+  "REVERSE_PROXY_PORTS": [
+    80,
+    443
+  ],
+  "AGENT_NAME": "nginx",
+  "CALLBACK_PATH": "/registrations",
+  "PROXY_BACKEND": "nginx",
+  "TIMEOUT": 5,
+  "INTERNAL_HOST": "0.0.0.0",
+  "INTERNAL_PORT": 8002,
+  "RELOAD": false,
+  "LOG_FILE_PATH": "data/.log"
+}
+2025-05-19 19:36:02,030 [INFO] __main__: Settings loaded successfully
+2025-05-19 19:36:02,030 [INFO] __main__: {
+  "DB_PATH": "data/db.sqlite",
+  "CONFIG_DIR": "../nginx/auto.d",
+  "CORE_URL": "http://192.168.87.10:8001/",
+  "AGENT_URL": "http://192.168.87.10:8002/",
+  "REVERSE_PROXY_IP": "192.168.87.10",
+  "REVERSE_PROXY_PORTS": [
+    80,
+    443
+  ],
+  "AGENT_NAME": "nginx",
+  "CALLBACK_PATH": "/registrations",
+  "PROXY_BACKEND": "nginx",
+  "TIMEOUT": 5,
+  "INTERNAL_HOST": "0.0.0.0",
+  "INTERNAL_PORT": 8002,
+  "RELOAD": false,
+  "LOG_FILE_PATH": "data/.log"
+}
+2025-05-19 19:40:07,429 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-19 19:40:15,357 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-19 19:40:15,491 [INFO] reverse_proxy_agent.config: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-19 19:40:15,502 [INFO] reverse_proxy_agent.config: 📨 Sent registration → request_id=1, secret=65fc5a4d1588a18980de2c86342e3802
+2025-05-19 19:40:41,908 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-19 19:40:42,041 [INFO] reverse_proxy_agent.config: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-19 19:40:42,053 [INFO] reverse_proxy_agent.config: 📨 Sent registration → request_id=2, secret=2b841b0e8e5dc731679834292939c54e
+2025-05-19 19:41:00,296 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-19 19:41:00,430 [INFO] reverse_proxy_agent.config: 🔒 Already registered:
+  UUID: 920d22fa-f57e-4164-8200-4eefb5a0363c
+  Token: c06f05efd758e5b8715e43523c4e4714
+2025-05-19 19:41:04,948 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-19 19:41:05,082 [INFO] reverse_proxy_agent.config: 🔒 Already registered:
+  UUID: 920d22fa-f57e-4164-8200-4eefb5a0363c
+  Token: c06f05efd758e5b8715e43523c4e4714
+2025-05-19 19:41:13,532 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-19 19:41:13,692 [ERROR] root: HTTP POST http://192.168.87.10:8001/service failed: 401 Client Error: Unauthorized for url: http://192.168.87.10:8001/service, {"detail":"Invalid or unauthorized token"}
+2025-05-19 19:41:13,692 [WARNING] root: Failed to register service openspeedtest: POST http://192.168.87.10:8001/service failed: {"detail":"Invalid or unauthorized token"}
+2025-05-19 19:41:13,697 [ERROR] root: HTTP POST http://192.168.87.10:8001/service failed: 401 Client Error: Unauthorized for url: http://192.168.87.10:8001/service, {"detail":"Invalid or unauthorized token"}
+2025-05-19 19:41:13,697 [WARNING] root: Failed to register service svc: POST http://192.168.87.10:8001/service failed: {"detail":"Invalid or unauthorized token"}
+2025-05-19 19:41:13,701 [ERROR] root: HTTP POST http://192.168.87.10:8001/service failed: 401 Client Error: Unauthorized for url: http://192.168.87.10:8001/service, {"detail":"Invalid or unauthorized token"}
+2025-05-19 19:41:13,702 [WARNING] root: Failed to register service memos: POST http://192.168.87.10:8001/service failed: {"detail":"Invalid or unauthorized token"}
+2025-05-19 19:41:59,834 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:21:32,239 [INFO] __main__: Settings loaded successfully
+2025-05-20 16:21:32,240 [INFO] __main__: {
+  "DB_PATH": "data/db.sqlite",
+  "CONFIG_DIR": "../nginx/auto.d",
+  "CORE_URL": "http://192.168.87.10:8001/",
+  "AGENT_URL": "http://192.168.87.10:8002/",
+  "REVERSE_PROXY_IP": "192.168.87.10",
+  "REVERSE_PROXY_PORTS": [
+    80,
+    443
+  ],
+  "AGENT_NAME": "nginx",
+  "CALLBACK_PATH": "/registrations",
+  "PROXY_BACKEND": "nginx",
+  "TIMEOUT": 5,
+  "INTERNAL_HOST": "0.0.0.0",
+  "INTERNAL_PORT": 8002,
+  "RELOAD": false,
+  "LOG_FILE_PATH": "data/.log"
+}
+2025-05-20 16:24:41,623 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:24:48,115 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:24:48,515 [INFO] reverse_proxy_agent.config: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:24:48,539 [INFO] reverse_proxy_agent.config: 📨 Sent registration → request_id=2, secret=1be43a78ec5114fa7f2cf9710549d9b4
+2025-05-20 16:24:57,080 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:25:02,193 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:25:02,353 [INFO] reverse_proxy_agent.config: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:25:02,410 [INFO] reverse_proxy_agent.config: 📨 Sent registration → request_id=2, secret=fc20505e6b510dbd569e1b654772a2e9
+2025-05-20 16:25:36,305 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:25:46,235 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:26:20,951 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:26:24,189 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:26:40,708 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:26:40,843 [INFO] reverse_proxy_agent.config: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:26:40,852 [INFO] reverse_proxy_agent.config: 📨 Sent registration → request_id=2, secret=856b798a6a449b7545dd5f8d872907b1
+2025-05-20 16:27:47,933 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:27:53,060 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:27:53,209 [INFO] reverse_proxy_agent.config: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:27:53,221 [INFO] reverse_proxy_agent.config: 📨 Sent registration → request_id=2, secret=aa00103e9f67117671f3e80adbac7a94
+2025-05-20 16:27:58,453 [INFO] reverse_proxy_agent.config: ✅ Registration approved!
+  UUID: 50790910-f617-4991-a8df-d327b7d85f52
+  Token: 57c11e111dda6494d7ed52ba26bb739e
+2025-05-20 16:27:59,436 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:27:59,677 [INFO] reverse_proxy_agent.config: 📣 Registered service 'openspeedtest' with Core (id=1)
+2025-05-20 16:27:59,753 [INFO] reverse_proxy_agent.config: 📣 Registered service 'svc' with Core (id=2)
+2025-05-20 16:27:59,830 [INFO] reverse_proxy_agent.config: 📣 Registered service 'memos' with Core (id=3)
+2025-05-20 16:32:55,760 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:33:01,239 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:33:01,488 [INFO] reverse_proxy_agent.config: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:33:01,496 [INFO] reverse_proxy_agent.config: 📨 Sent registration → request_id=2, secret=04751dc0037b80f8801290d8a308cb9a
+2025-05-20 16:33:06,339 [INFO] reverse_proxy_agent.config: ✅ Registration approved!
+2025-05-20 16:33:06,339 [INFO] reverse_proxy_agent.config: 	UUID: c9994ea9-e4c2-4c95-9924-0f3762c93574
+2025-05-20 16:33:06,339 [INFO] reverse_proxy_agent.config: 	Token: 5f600dec72495d2830c305ccbf060f75
+2025-05-20 16:33:07,352 [INFO] reverse_proxy_agent.config: Settings loaded successfully
+2025-05-20 16:33:07,586 [INFO] reverse_proxy_agent.config: 📣 Registered service 'openspeedtest' with Core (id=1)
+2025-05-20 16:33:07,661 [INFO] reverse_proxy_agent.config: 📣 Registered service 'svc' with Core (id=2)
+2025-05-20 16:33:07,736 [INFO] reverse_proxy_agent.config: 📣 Registered service 'memos' with Core (id=3)
+2025-05-20 16:37:44,278 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:37:49,448 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:37:49,600 [INFO] cli.py: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:37:49,612 [INFO] cli.py: 📨 Sent registration → request_id=2, secret=ac788b5aa9c64f07d7c689bb738ffdab
+2025-05-20 16:37:55,144 [INFO] cli.py: ✅ Registration approved!
+2025-05-20 16:37:55,145 [INFO] cli.py: 	UUID: 437d569c-0ddb-4134-abcb-dc1a12e9579b
+2025-05-20 16:37:55,145 [INFO] cli.py: 	Token: 9f04fd01296f7b1afb79449cf99bae1f
+2025-05-20 16:37:56,154 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:37:56,409 [INFO] sync.py: 📣 Registered service 'openspeedtest' with Core (id=1)
+2025-05-20 16:37:56,489 [INFO] sync.py: 📣 Registered service 'svc' with Core (id=2)
+2025-05-20 16:37:56,565 [INFO] sync.py: 📣 Registered service 'memos' with Core (id=3)
+2025-05-20 16:48:49,955 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:48:55,381 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:48:55,608 [INFO] cli.py: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:48:55,637 [INFO] cli.py: 📨 Sent registration → request_id=1, secret=2f17ab1e187a15da937cc4c6244e0d34
+2025-05-20 16:49:10,367 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:15,605 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:24,825 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:36,115 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:41,258 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:41,406 [INFO] cli.py: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:50:41,418 [INFO] cli.py: 📨 Sent registration → request_id=2, secret=a38d0d3805f77ec5fce186688d96fdc3
+2025-05-20 16:50:46,644 [INFO] cli.py: ✅ Registration approved!
+2025-05-20 16:50:46,645 [INFO] cli.py: 	UUID: 7253ec7d-bdca-4a72-9c8a-23ab27bd07e5
+2025-05-20 16:50:46,645 [INFO] cli.py: 	Token: 536a5230a901ffc814f311b4a1405386
+2025-05-20 16:50:47,637 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:47,872 [INFO] sync.py: 📣 Registered service 'openspeedtest' with Core (id=1)
+2025-05-20 16:50:47,951 [INFO] sync.py: 📣 Registered service 'svc' with Core (id=2)
+2025-05-20 16:50:48,030 [INFO] sync.py: 📣 Registered service 'memos' with Core (id=3)
+2025-05-20 16:52:01,073 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:52:06,188 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:52:06,338 [INFO] cli.py: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:52:06,347 [INFO] cli.py: 📨 Sent registration → request_id=2, secret=a52dcc91487d30660135ed4fd1182e6b
+2025-05-20 16:52:11,680 [INFO] cli.py: ✅ Registration approved!
+2025-05-20 16:52:11,680 [INFO] cli.py: 	UUID: 6cd017f4-0f69-4e24-b6e8-3efba56ad335
+2025-05-20 16:52:11,680 [INFO] cli.py: 	Token: c5c3fc11f0c870e27d1a4b56794145d1
+2025-05-20 16:52:12,679 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:52:12,945 [INFO] sync.py: 📣 Registered service 'openspeedtest' with Core (id=1)
+2025-05-20 16:52:13,029 [INFO] sync.py: 📣 Registered service 'svc' with Core (id=2)
+2025-05-20 16:52:13,107 [INFO] sync.py: 📣 Registered service 'memos' with Core (id=3)
+2025-05-20 16:52:30,654 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:52:35,961 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:52:36,169 [INFO] cli.py: 🔄 Waiting for Core callback at http://0.0.0.0:8002/registrations …
+2025-05-20 16:52:36,177 [INFO] cli.py: 📨 Sent registration → request_id=2, secret=949676eebcf9f6ab67c7e3ed77fedf53
+2025-05-20 16:52:41,221 [INFO] cli.py: ✅ Registration approved!
+2025-05-20 16:52:41,221 [INFO] cli.py: 	UUID: 0327e834-9986-401c-aa03-547eb95b3f06
+2025-05-20 16:52:41,221 [INFO] cli.py: 	Token: 9aa2cd591d362dbec79b2ba933a879c0
+2025-05-20 16:52:42,385 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:52:42,635 [INFO] sync.py: 📣 Registered service 'openspeedtest' with Core (id=1)
+2025-05-20 16:52:42,711 [INFO] sync.py: 📣 Registered service 'svc' with Core (id=2)
+2025-05-20 16:52:42,787 [INFO] sync.py: 📣 Registered service 'memos' with Core (id=3)

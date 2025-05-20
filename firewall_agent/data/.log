@@ -1,0 +1,30 @@
+2025-05-20 16:48:49,073 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:48:49,298 [INFO] reset.py: [ALIAS] deleted 8be4b885-8b97-46fb-a1d6-c5b9a7a7fbef
+2025-05-20 16:48:49,355 [INFO] reset.py: [ALIAS] deleted 22dd75b3-6aae-4971-8bfe-aad18f15c29e
+2025-05-20 16:48:49,412 [INFO] reset.py: [ALIAS] deleted 9533b58b-0eee-4951-8aef-e6dee244cad7
+2025-05-20 16:48:49,413 [INFO] reset.py: [DB] removed local data/db.sqlite
+2025-05-20 16:48:49,413 [INFO] reset.py: Cleanup complete.
+2025-05-20 16:49:09,598 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:49:09,822 [INFO] reset.py: [DB] removed local data/db.sqlite
+2025-05-20 16:49:09,822 [INFO] reset.py: Cleanup complete.
+2025-05-20 16:50:14,774 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:15,053 [INFO] reset.py: [DB] removed local data/db.sqlite
+2025-05-20 16:50:15,053 [INFO] reset.py: Cleanup complete.
+2025-05-20 16:50:24,106 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:24,273 [INFO] reset.py: [DB] removed local data/db.sqlite
+2025-05-20 16:50:24,273 [INFO] reset.py: Cleanup complete.
+2025-05-20 16:50:35,358 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:50:35,584 [INFO] reset.py: [DB] removed local data/db.sqlite
+2025-05-20 16:50:35,584 [INFO] reset.py: Cleanup complete.
+2025-05-20 16:52:00,098 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:52:00,391 [INFO] reset.py: [ALIAS] deleted 11a8f676-d86b-4364-8626-b380b72041da
+2025-05-20 16:52:00,451 [INFO] reset.py: [ALIAS] deleted 67ccb557-8179-461b-8612-7ec50ff1524c
+2025-05-20 16:52:00,510 [INFO] reset.py: [ALIAS] deleted a64eef33-e470-4c2f-848a-84f56bb5a120
+2025-05-20 16:52:00,510 [INFO] reset.py: [DB] removed local data/db.sqlite
+2025-05-20 16:52:00,510 [INFO] reset.py: Cleanup complete.
+2025-05-20 16:52:29,692 [INFO] config.py: Settings loaded successfully
+2025-05-20 16:52:29,976 [INFO] reset.py: [ALIAS] deleted 8cc6e341-1b78-4f4d-896f-6703df1a3cad
+2025-05-20 16:52:30,033 [INFO] reset.py: [ALIAS] deleted 8222cc66-fed9-4030-ac31-fd992be55552
+2025-05-20 16:52:30,091 [INFO] reset.py: [ALIAS] deleted 15d22dd8-d979-4c7c-b295-50733f7400f1
+2025-05-20 16:52:30,091 [INFO] reset.py: [DB] removed local data/db.sqlite
+2025-05-20 16:52:30,091 [INFO] reset.py: Cleanup complete.

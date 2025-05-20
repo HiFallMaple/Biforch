@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# reverse proxy_agent/cli.py
+# reverse_proxy_agent/cli.py
 
 """
 Command-line interface for Biforch Reverse Proxy Agent.
@@ -7,12 +7,12 @@ Provides commands to enqueue registration with Biforch Core
 and to start the API server.
 After registration, stores received UUID and token in local database.
 """
-import threading
 import logging
+import threading
 
 import typer
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Literal, Optional
 
@@ -20,7 +20,6 @@ from .config import settings
 from .clients.core import CoreClient
 from .database import SessionLocal  # This is where the session is created
 from .models import AgentCredentials
-from .dependencies import get_db
 
 app = typer.Typer(help="Biforch Reverse Proxy Agent CLI")
 
@@ -49,10 +48,9 @@ def init():
         # Check for existing credentials
         existing = db.query(AgentCredentials).first()
         if existing:
-            typer.secho(
-                f"🔒 Already registered:\n  UUID: {existing.uuid}\n  Token: {existing.token}",
-                fg=typer.colors.YELLOW
-            )
+            logging.info(f"🔒 Already registered:")
+            logging.info(f"\tUUID: {existing.uuid}")
+            logging.info(f"\tToken: {existing.token}")
             return
 
         callback_data: Dict[str, str] = {}
@@ -87,7 +85,7 @@ def init():
         server = uvicorn.Server(config)
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
-        typer.echo(
+        logging.info(
             f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
         )
 
@@ -100,7 +98,7 @@ def init():
             ports=settings.REVERSE_PROXY_PORTS,
         )
         callback_data["secret"] = pending.secret
-        typer.echo(
+        logging.info(
             f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
         )
 
@@ -118,12 +116,11 @@ def init():
             # Persist credentials in DB
             db.add(AgentCredentials(uuid=uuid_str, token=token_str))
             db.commit()
-            typer.secho(
-                f"✅ Registration approved!\n  UUID: {uuid_str}\n  Token: {token_str}",
-                fg=typer.colors.GREEN
-            )
+            logging.info(f"✅ Registration approved!")
+            logging.info(f"\tUUID: {uuid_str}")
+            logging.info(f"\tToken: {token_str}")
         else:
-            typer.secho("❌ Registration was rejected by Core", fg=typer.colors.RED)
+            logging.error("❌ Registration was rejected by Core")
     finally:
         db.close()  # Close the session after usage
 
@@ -134,10 +131,6 @@ def serve():
     Start the Biforch Reverse Proxy Agent API server
     (which runs background syncs, etc.).
     """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s: %(message)s"
-    )
     uvicorn.run(
         f"{__package__}.api:app",
         host=settings.INTERNAL_HOST,

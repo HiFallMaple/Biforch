@@ -36,7 +36,7 @@ class OPNsenseBackend:
             resp.raise_for_status()
         except Exception as exc:  # noqa: BLE001
             logging.error("OPNsense alias create failed: %s", exc)
-            print(f"Error during alias creation: status={resp.status_code}, text={resp.text}")
+            logging.error(f"Error during alias creation: status={resp.status_code}, text={resp.text}")
             raise
 
         # Use INFO level so it's visible under default settings

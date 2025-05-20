@@ -1,9 +1,7 @@
-from uuid import UUID
-import requests
 import logging
+import requests
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
-
 
 # ---------------------------------------------------------------------
 # Data models

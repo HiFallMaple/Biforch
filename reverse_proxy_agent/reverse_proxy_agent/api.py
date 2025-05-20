@@ -1,7 +1,6 @@
 """FastAPI entry‑point – **only** routing / HTTP concerns live here."""
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List

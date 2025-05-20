@@ -8,6 +8,8 @@ Centralised runtime configuration for Reverse Proxy Agent.
 """
 from __future__ import annotations
 
+import logging
+import logging.config
 import sys
 from pathlib import Path
 from typing import Literal, List
@@ -38,23 +40,30 @@ class Settings(BaseSettings):
         INTERNAL_PORT: Uvicorn bind port
         RELOAD: Enable Uvicorn auto-reload in development
     """
-    # Data storage
-    DB_PATH: Path = Field(..., description="SQLite DB file path")
-    CONFIG_DIR: Path = Field(..., description="Directory for proxy config snippets")
+    # default put db in data dir
+    DB_PATH: Path = Field(
+        "./data/db.sqlite",
+        description="Path to SQLite database file",
+    )
+    CONFIG_DIR: Path = Field(...,
+                             description="Directory for proxy config snippets")
 
     # External service URLs
     CORE_URL: AnyHttpUrl = Field(..., description="Biforch Core service URL")
-    AGENT_URL: AnyHttpUrl = Field(..., description="This agent's callback/API URL")
+    AGENT_URL: AnyHttpUrl = Field(...,
+                                  description="This agent's callback/API URL")
 
     # Reverse proxy network settings
-    REVERSE_PROXY_IP: str = Field(..., description="IP address for reverse proxy to bind")
+    REVERSE_PROXY_IP: str = Field(...,
+                                  description="IP address for reverse proxy to bind")
     REVERSE_PROXY_PORTS: List[int] = Field(
         default_factory=list,
         description="Ports exposed by reverse proxy, as a list or comma-separated string"
     )
 
     # Identification
-    AGENT_NAME: str = Field(..., description="Logical name of the reverse proxy agent")
+    AGENT_NAME: str = Field(...,
+                            description="Logical name of the reverse proxy agent")
     CALLBACK_PATH: str = Field(
         "/registrations", description="Endpoint path for Core callback"
     )
@@ -77,6 +86,9 @@ class Settings(BaseSettings):
     RELOAD: bool = Field(
         False, description="Enable Uvicorn auto-reload in development"
     )
+
+    # Logging
+    LOG_FILE_PATH: Path = Field("./data/.log", description="Path to log file")
 
     # Pydantic model configuration
     model_config = {
@@ -112,7 +124,8 @@ class Settings(BaseSettings):
         try:
             ipaddress.ip_address(v)
         except ValueError:
-            raise ValueError(f"REVERSE_PROXY_IP must be a valid IP address: {v}")
+            raise ValueError(
+                f"REVERSE_PROXY_IP must be a valid IP address: {v}")
         return v
 
     @field_validator("REVERSE_PROXY_PORTS", mode="before")
@@ -180,9 +193,60 @@ class Settings(BaseSettings):
         return bool(v)
 
 
+LOGGING_CONFIG: dict = {
+    "version": 1,
+    "disable_existing_loggers": False,
+
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s,%(msecs)03d [%(levelname)s] %(filename)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+        "colored": {
+            "()": "uvicorn.logging.DefaultFormatter",
+            "fmt": "%(levelprefix)s [%(filename)s:%(lineno)d] [%(asctime)s] %(message)s",
+            "datefmt": "%H:%M:%S",
+            "use_colors": True,
+        },
+    },
+
+    "handlers": {
+        "file": {
+            "class": "logging.FileHandler",
+            "level": "INFO",
+            "formatter": "standard",
+            "filename": ".log",
+            "mode": "a",
+        },
+        "console": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "colored",
+            "stream": "ext://sys.stdout",
+        },
+    },
+
+    "loggers": {
+        "": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+
+
 # Instantiate settings (fails on validation error)
 try:
     settings = Settings()
+    LOGGING_CONFIG["handlers"]["file"]["filename"] = settings.LOG_FILE_PATH
+    logging.config.dictConfig(LOGGING_CONFIG)
+    logging.info("Settings loaded successfully")
 except ValidationError as exc:
-    print("🚨 Configuration error:\n", exc, file=sys.stderr)
+    logging.error("🚨 Configuration error:\n", exc, file=sys.stderr)
     sys.exit(1)
+
+
+if __name__ == "__main__":
+    settings_json = settings.model_dump_json(indent=2)
+    logging.info(f"{settings_json}")

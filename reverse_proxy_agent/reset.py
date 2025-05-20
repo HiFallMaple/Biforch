@@ -2,12 +2,10 @@
 """
 reset.py ─ 刪除 reverse_proxy.db（若存在）
 """
-from pathlib import Path
-
-DB_FILE = "reverse_proxy.db"
+from reverse_proxy_agent.config import settings
 
 def main() -> None:
-    db_path = Path(__file__).resolve().parent / DB_FILE
+    db_path = settings.DB_PATH
     if db_path.exists():
         db_path.unlink()
         print(f"✅ 已刪除 {db_path}")

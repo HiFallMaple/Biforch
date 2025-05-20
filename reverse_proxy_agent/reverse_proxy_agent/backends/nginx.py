@@ -9,7 +9,6 @@ from typing import Dict, List
 
 from .base import ProxyBackend
 
-
 class NginxBackend(ProxyBackend):
     def __init__(self, config_dir: Path) -> None:
         self.config_dir = config_dir
