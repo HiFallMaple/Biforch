@@ -137,7 +137,7 @@
        7	AGENT_NAME=opnsense
        8	TIMEOUT=15
        9	PORT=8000
-      10	RELOAD=true
+      10	RELOAD=False
 
 ------------------------------ firewall_agent/api.py ------------------------------
        1	"""FastAPI entry‑point – contains *only* HTTP concerns."""
@@ -171,10 +171,10 @@
       29	async def lifespan(_: FastAPI):
       30	    """Background thread monitors firewall every 10 s."""
       31	    stop = threading.Event()
-      32	
+      32	    db: Session = next(get_db())  # type: ignore[arg-type]
       33	    def _worker():
       34	        while not stop.is_set():
-      35	            sync_firewall()
+      35	            sync_firewall(db)
       36	            time.sleep(10)
       37	
       38	    thread = threading.Thread(target=_worker, daemon=True)
@@ -365,7 +365,7 @@
       36	            resp.raise_for_status()
       37	        except Exception as exc:  # noqa: BLE001
       38	            logging.error("OPNsense alias create failed: %s", exc)
-      39	            print(f"Error during alias creation: status={resp.status_code}, text={resp.text}")
+      39	            logging.error(f"Error during alias creation: status={resp.status_code}, text={resp.text}")
       40	            raise
       41	
       42	        # Use INFO level so it's visible under default settings
@@ -669,8 +669,8 @@
        7	and to start the API server.
        8	After registration, stores received UUID and token in local database.
        9	"""
-      10	import threading
-      11	import logging
+      10	import logging
+      11	import threading
       12	
       13	import typer
       14	import uvicorn
@@ -680,7 +680,7 @@
       18	
       19	from .config import settings
       20	from .clients.core import CoreClient
-      21	from .database import SessionLocal
+      21	from .database import SessionLocal  # This is where the session is created
       22	from .models import AgentCredentials
       23	
       24	app = typer.Typer(help="Biforch Firewall Agent CLI")
@@ -689,7 +689,7 @@
       27	class RegistrationCallback(BaseModel):
       28	    """
       29	    Model for Core's callback payload.
-      30	    Core will POST {"secret": "...", "action": "approve|reject", "uuid": "...", "token": "..."}
+      30	    Core will POST {"secret": "...", "action": "approve|reject", "uuid": "...", "token": "..."}.
       31	    """
       32	    secret: str
       33	    action: Literal["approve", "reject"]
@@ -705,225 +705,306 @@
       43	    3) Enqueue a firewall registration request to Core (using settings.CORE_URL).
       44	    4) Block until Core calls back, then store credentials & exit.
       45	    """
-      46	    # Check for existing credentials
-      47	    db = SessionLocal()
-      48	    existing = db.query(AgentCredentials).first()
-      49	    if existing:
-      50	        typer.secho(
-      51	            f"🔒 Already registered:\n  UUID: {existing.uuid}\n  Token: {existing.token}",
-      52	            fg=typer.colors.YELLOW
-      53	        )
-      54	        db.close()
-      55	        return
-      56	
-      57	    callback_data: Dict[str, str] = {}
-      58	    event = threading.Event()
-      59	
-      60	    # Build temporary FastAPI app for callback
-      61	    server_app = FastAPI()
-      62	
-      63	    @server_app.post(settings.CALLBACK_PATH)
-      64	    async def receive_callback(body: RegistrationCallback):
-      65	        # Validate secret
-      66	        if body.secret != callback_data.get("secret"):
-      67	            raise HTTPException(400, "Invalid secret")
-      68	        callback_data["action"] = body.action
-      69	        # On approval, capture uuid and token
-      70	        if body.action == "approve":
-      71	            callback_data["uuid"] = body.uuid or ""
-      72	            callback_data["token"] = body.token or ""
-      73	        # Signal shutdown and notifying main thread
-      74	        server.should_exit = True
-      75	        event.set()
-      76	        return {"status": "received"}
-      77	
-      78	    # Start Uvicorn server in background
-      79	    config = uvicorn.Config(
-      80	        server_app,
-      81	        host=settings.INTERNAL_HOST,
-      82	        port=settings.INTERNAL_PORT,
-      83	        log_level="info",
-      84	        lifespan="on"
-      85	    )
-      86	    server = uvicorn.Server(config)
-      87	    thread = threading.Thread(target=server.run, daemon=True)
-      88	    thread.start()
-      89	    typer.echo(
-      90	        f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
-      91	    )
-      92	
-      93	    # Enqueue registration with Core
-      94	    client = CoreClient(base_url=str(settings.CORE_URL))
-      95	    pending = client.register_firewall(
-      96	        name=settings.AGENT_NAME,
-      97	        api_url=str(settings.AGENT_URL),
-      98	    )
-      99	    callback_data["secret"] = pending.secret
-     100	    typer.echo(
-     101	        f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
-     102	    )
-     103	
-     104	    # Block until callback arrives
-     105	    event.wait()
-     106	
-     107	    # Shutdown server thread
-     108	    thread.join(timeout=1)
-     109	
-     110	    # Report and store result
-     111	    action = callback_data.get("action")
-     112	    if action == "approve":
-     113	        uuid_str = callback_data.get("uuid", "")
-     114	        token_str = callback_data.get("token", "")
-     115	        # Persist credentials in DB
-     116	        db.add(AgentCredentials(uuid=uuid_str, token=token_str))
-     117	        db.commit()
-     118	        db.close()
-     119	        typer.secho(
-     120	            f"✅ Registration approved!\n  UUID: {uuid_str}\n  Token: {token_str}",
-     121	            fg=typer.colors.GREEN
-     122	        )
-     123	    else:
-     124	        typer.secho("❌ Registration was rejected by Core", fg=typer.colors.RED)
+      46	    db = SessionLocal()  # This is where we manually create the session
+      47	    try:
+      48	        # Check for existing credentials
+      49	        existing = db.query(AgentCredentials).first()
+      50	        if existing:
+      51	            logging.info(f"🔒 Already registered:")
+      52	            logging.info(f"\tUUID: {existing.uuid}")
+      53	            logging.info(f"\tToken: {existing.token}")
+      54	            return
+      55	
+      56	        callback_data: Dict[str, str] = {}
+      57	        event = threading.Event()
+      58	
+      59	        # Build temporary FastAPI app for callback
+      60	        server_app = FastAPI()
+      61	
+      62	        @server_app.post(settings.CALLBACK_PATH)
+      63	        async def receive_callback(body: RegistrationCallback):
+      64	            # Validate secret
+      65	            if body.secret != callback_data.get("secret"):
+      66	                raise HTTPException(400, "Invalid secret")
+      67	            callback_data["action"] = body.action
+      68	            # On approval, capture uuid and token
+      69	            if body.action == "approve":
+      70	                callback_data["uuid"] = body.uuid or ""
+      71	                callback_data["token"] = body.token or ""
+      72	            # Signal shutdown and notifying main thread
+      73	            server.should_exit = True
+      74	            event.set()
+      75	            return {"status": "received"}
+      76	
+      77	        # Start Uvicorn server in background
+      78	        config = uvicorn.Config(
+      79	            server_app,
+      80	            host=settings.INTERNAL_HOST,
+      81	            port=settings.INTERNAL_PORT,
+      82	            log_level="info",
+      83	            lifespan="on"
+      84	        )
+      85	        server = uvicorn.Server(config)
+      86	        thread = threading.Thread(target=server.run, daemon=True)
+      87	        thread.start()
+      88	        logging.info(
+      89	            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
+      90	        )
+      91	
+      92	        # Enqueue registration with Core
+      93	        client = CoreClient(base_url=str(settings.CORE_URL))
+      94	        pending = client.register_firewall(
+      95	            name=settings.AGENT_NAME,
+      96	            api_url=str(settings.AGENT_URL),
+      97	        )
+      98	        callback_data["secret"] = pending.secret
+      99	        logging.info(
+     100	            f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
+     101	        )
+     102	
+     103	        # Block until callback arrives
+     104	        event.wait()
+     105	
+     106	        # Shutdown server thread
+     107	        thread.join(timeout=1)
+     108	
+     109	        # Report and store result
+     110	        action = callback_data.get("action")
+     111	        if action == "approve":
+     112	            uuid_str = callback_data.get("uuid", "")
+     113	            token_str = callback_data.get("token", "")
+     114	            # Persist credentials in DB
+     115	            db.add(AgentCredentials(uuid=uuid_str, token=token_str))
+     116	            db.commit()
+     117	            logging.info(f"✅ Registration approved!")
+     118	            logging.info(f"\tUUID: {uuid_str}")
+     119	            logging.info(f"\tToken: {token_str}")
+     120	        else:
+     121	            logging.error("❌ Registration was rejected by Core")
+     122	    finally:
+     123	        db.close()  # Close the session after usage
+     124	
      125	
-     126	
-     127	@app.command()
-     128	def serve():
-     129	    """
-     130	    Start the Biforch Firewall Agent API server
-     131	    (which runs background syncs, etc.).
-     132	    """
-     133	    import uvicorn
-     134	
-     135	    logging.basicConfig(
-     136	        level=logging.INFO,
-     137	        format="%(levelname)s: %(message)s"
-     138	    )
-     139	    uvicorn.run(
-     140	        f"{__package__}.api:app",
-     141	        host=settings.INTERNAL_HOST,
-     142	        port=settings.INTERNAL_PORT,
-     143	        reload=settings.RELOAD,
-     144	    )
-     145	
-     146	
-     147	if __name__ == "__main__":
-     148	    app()
+     126	@app.command()
+     127	def serve():
+     128	    """
+     129	    Start the Biforch Firewall Agent API server
+     130	    (which runs background syncs, etc.).
+     131	    """
+     132	    uvicorn.run(
+     133	        f"{__package__}.api:app",
+     134	        host=settings.INTERNAL_HOST,
+     135	        port=settings.INTERNAL_PORT,
+     136	        reload=settings.RELOAD,
+     137	    )
+     138	
+     139	
+     140	if __name__ == "__main__":
+     141	    app()
 
 ------------------------------ firewall_agent/config.py ------------------------------
-       1	# firewall_agent/config.py
-       2	"""
-       3	Central runtime configuration for Biforch Firewall Agent.
-       4	
-       5	- Loads settings from environment variables via pydantic-settings
-       6	- Validates values on startup (fails fast)
-       7	- Includes both API (OPNsense/Core) and server (Uvicorn) parameters
-       8	"""
-       9	from __future__ import annotations
-      10	
-      11	import sys
-      12	from pathlib import Path
-      13	from typing import Dict
-      14	
-      15	from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
-      16	from pydantic_settings import BaseSettings
+       1	from __future__ import annotations
+       2	
+       3	import ipaddress
+       4	import logging
+       5	import logging.config
+       6	import sys
+       7	from pathlib import Path
+       8	from typing import Dict
+       9	
+      10	from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+      11	from pydantic_settings import BaseSettings
+      12	
+      13	
+      14	class Settings(BaseSettings):
+      15	    """
+      16	    Application settings for Biforch Firewall Agent.
       17	
-      18	
-      19	class Settings(BaseSettings):
+      18	    - Loads settings from environment variables via pydantic-settings
+      19	    - Validates values on startup (fails fast)
       20	    """
-      21	    Application settings loaded from environment.
-      22	
-      23	    Attributes:
-      24	        CORE_URL: URL of Biforch Core service
-      25	        REMOTE_URL: Base URL of OPNsense firewall
-      26	        AGENT_URL: Callback/API URL of this agent
-      27	
-      28	        API_KEY: OPNsense API key
-      29	        API_SECRET: OPNsense API secret
-      30	        PREFIX: Prefix for firewall aliases
-      31	        AGENT_NAME: Logical name of this agent
-      32	        CALLBACK_PATH: Path to receive Core callbacks
-      33	
-      34	        TIMEOUT: HTTP request timeout (seconds)
-      35	        DB_PATH: Path to SQLite database file
-      36	
-      37	        INTERNAL_HOST: Uvicorn bind host
-      38	        INTERNAL_PORT: Uvicorn bind port
-      39	        RELOAD: Enable Uvicorn auto-reload in dev
-      40	
-      41	        ACTION_MAP: Map firewall actions to Core contract
-      42	    """
-      43	    # External service URLs
-      44	    CORE_URL: AnyHttpUrl
-      45	    REMOTE_URL: AnyHttpUrl
-      46	    AGENT_URL: AnyHttpUrl
-      47	
-      48	    # Firewall authentication
-      49	    API_KEY: str
-      50	    API_SECRET: str
-      51	
-      52	    # Alias configuration
-      53	    PREFIX: str = Field("Biforch_", description="Prefix for OPNsense aliases")
-      54	    AGENT_NAME: str
-      55	    CALLBACK_PATH: str = Field("/registrations", description="Core callback endpoint path")
-      56	
-      57	    # Runtime behavior
-      58	    TIMEOUT: int = Field(10, description="Outbound HTTP timeout in seconds")
-      59	    DB_PATH: Path = Field(Path("data/firewall.db"), description="Local SQLite DB file path")
-      60	
-      61	    # Server settings
-      62	    INTERNAL_HOST: str = Field("0.0.0.0", description="Uvicorn server host")
-      63	    INTERNAL_PORT: int = Field(8000, description="Uvicorn server port")
-      64	    RELOAD: bool = Field(False, description="Enable Uvicorn auto-reload in development")
-      65	
-      66	    # Internal mappings
-      67	    ACTION_MAP: Dict[str, str] = Field(
-      68	        default_factory=lambda: {"pass": "pass", "block": "block", "reject": "block"},
-      69	        description="Map OPNsense actions to Core contract"
-      70	    )
-      71	
-      72	    # Pydantic settings
-      73	    model_config = {
-      74	        "extra": "ignore",
-      75	        "env_file": ".env",
-      76	        "case_sensitive": True,
-      77	    }
-      78	
-      79	    # Validators
-      80	    @field_validator("TIMEOUT", mode="before")
-      81	    @classmethod
-      82	    def _ensure_positive_timeout(cls, v: int | str) -> int:
-      83	        value = int(v)
-      84	        if value <= 0:
-      85	            raise ValueError("TIMEOUT must be a positive integer")
-      86	        return value
+      21	    # External service URLs
+      22	    CORE_URL: AnyHttpUrl = Field(..., description="URL of Biforch Core service")
+      23	    REMOTE_URL: AnyHttpUrl = Field(..., description="Base URL of OPNsense firewall")
+      24	    AGENT_URL: AnyHttpUrl = Field(..., description="Callback/API URL of this agent")
+      25	
+      26	    # Firewall authentication
+      27	    API_KEY: str = Field(..., description="OPNsense API key")
+      28	    API_SECRET: str = Field(..., description="OPNsense API secret")
+      29	
+      30	    # Alias configuration
+      31	    PREFIX: str = Field(
+      32	        "Biforch_",
+      33	        min_length=1,
+      34	        description="Prefix for OPNsense aliases"
+      35	    )
+      36	    AGENT_NAME: str = Field(..., description="Logical name of this agent")
+      37	    CALLBACK_PATH: str = Field(
+      38	        "/registrations",
+      39	        description="Core callback endpoint path"
+      40	    )
+      41	
+      42	    # Runtime behavior
+      43	    TIMEOUT: int = Field(
+      44	        10,
+      45	        description="Outbound HTTP timeout in seconds",
+      46	        gt=0
+      47	    )
+      48	    DB_PATH: Path = Field(
+      49	        "./data/db.sqlite",
+      50	        description="Path to SQLite database file"
+      51	    )
+      52	
+      53	    # Server settings
+      54	    INTERNAL_HOST: str = Field(
+      55	        "0.0.0.0",
+      56	        description="Uvicorn server host"
+      57	    )
+      58	    INTERNAL_PORT: int = Field(
+      59	        8000,
+      60	        description="Uvicorn server port",
+      61	        ge=1,
+      62	        le=65535
+      63	    )
+      64	    RELOAD: bool = Field(
+      65	        False,
+      66	        description="Enable Uvicorn auto-reload in development"
+      67	    )
+      68	
+      69	    # Internal mappings
+      70	    ACTION_MAP: Dict[str, str] = Field(
+      71	        default_factory=lambda: {"pass": "pass", "block": "block", "reject": "block"},
+      72	        description="Map OPNsense actions to Core contract"
+      73	    )
+      74	
+      75	    # Logging
+      76	    LOG_FILE_PATH: Path = Field(
+      77	        "./data/.log",
+      78	        description="Path to log file"
+      79	    )
+      80	
+      81	    # Pydantic settings
+      82	    model_config = {
+      83	        "extra": "ignore",
+      84	        "case_sensitive": True,
+      85	        "env_file": ".env",
+      86	    }
       87	
-      88	    @field_validator("INTERNAL_PORT", mode="before")
-      89	    @classmethod
-      90	    def _ensure_valid_port(cls, v: int | str) -> int:
-      91	        port = int(v)
-      92	        if not (1 <= port <= 65535):
-      93	            raise ValueError("INTERNAL_PORT must be between 1 and 65535")
-      94	        return port
-      95	
-      96	    @field_validator("RELOAD", mode="before")
-      97	    @classmethod
-      98	    def _parse_reload_flag(cls, v: bool | str) -> bool:
-      99	        if isinstance(v, str):
-     100	            val = v.lower()
-     101	            if val in ("true", "1", "yes"):
-     102	                return True
-     103	            if val in ("false", "0", "no"):
-     104	                return False
-     105	            raise ValueError("RELOAD must be a boolean value")
-     106	        return bool(v)
-     107	
-     108	
-     109	# Instantiate settings (fails on validation error)
-     110	try:
-     111	    settings = Settings()
-     112	except ValidationError as exc:
-     113	    print("🚨 Configuration error:\n", exc, file=sys.stderr)
-     114	    sys.exit(1)
+      88	    # ---------------------- Validators ----------------------
+      89	    @field_validator("DB_PATH", mode="before")
+      90	    @classmethod
+      91	    def _validate_db_path(cls, v: str | Path) -> Path:
+      92	        path = Path(v)
+      93	        parent = path.parent
+      94	        if not parent.exists():
+      95	            raise ValueError(f"DB_PATH directory does not exist: {parent}")
+      96	        return path
+      97	
+      98	    @field_validator("LOG_FILE_PATH", mode="before")
+      99	    @classmethod
+     100	    def _validate_log_file_path(cls, v: str | Path) -> Path:
+     101	        path = Path(v)
+     102	        parent = path.parent
+     103	        if not parent.exists():
+     104	            raise ValueError(f"LOG_FILE_PATH directory does not exist: {parent}")
+     105	        return path
+     106	
+     107	    @field_validator("INTERNAL_HOST", mode="before")
+     108	    @classmethod
+     109	    def _validate_internal_host(cls, v: str) -> str:
+     110	        try:
+     111	            ipaddress.ip_address(v)
+     112	        except ValueError:
+     113	            raise ValueError(f"INTERNAL_HOST must be a valid IP address: {v}")
+     114	        return v
+     115	
+     116	    @field_validator("PREFIX", mode="before")
+     117	    @classmethod
+     118	    def _validate_prefix(cls, v: str) -> str:
+     119	        if not v or v.strip() == "":
+     120	            raise ValueError("PREFIX cannot be empty")
+     121	        return v
+     122	
+     123	    @field_validator("CALLBACK_PATH", mode="before")
+     124	    @classmethod
+     125	    def _validate_callback_path(cls, v: str) -> str:
+     126	        if not v.startswith("/"):
+     127	            raise ValueError("CALLBACK_PATH must start with '/'")
+     128	        return v
+     129	
+     130	    @field_validator("ACTION_MAP", mode="before")
+     131	    @classmethod
+     132	    def _validate_action_map(cls, v: Dict[str, str]) -> Dict[str, str]:
+     133	        if not isinstance(v, dict) or not v:
+     134	            raise ValueError("ACTION_MAP must be a non-empty dict")
+     135	        return v
+     136	
+     137	    @field_validator("RELOAD", mode="before")
+     138	    @classmethod
+     139	    def _parse_reload_flag(cls, v: bool | str) -> bool:
+     140	        if isinstance(v, str):
+     141	            val = v.lower()
+     142	            if val in ("true", "1", "yes"):
+     143	                return True
+     144	            if val in ("false", "0", "no"):
+     145	                return False
+     146	            raise ValueError("RELOAD must be a boolean value")
+     147	        return bool(v)
+     148	
+     149	
+     150	LOGGING_CONFIG: dict = {
+     151	    "version": 1,
+     152	    "disable_existing_loggers": False,
+     153	    "formatters": {
+     154	        "standard": {
+     155	            "format": "%(asctime)s,%(msecs)03d [%(levelname)s] %(filename)s: %(message)s",
+     156	            "datefmt": "%Y-%m-%d %H:%M:%S",
+     157	        },
+     158	        "colored": {
+     159	            "()": "uvicorn.logging.DefaultFormatter",
+     160	            "fmt": "%(levelprefix)s [%(filename)s:%(lineno)d] [%(asctime)s] %(message)s",
+     161	            "datefmt": "%H:%M:%S",
+     162	            "use_colors": True,
+     163	        },
+     164	    },
+     165	    "handlers": {
+     166	        "file": {
+     167	            "class": "logging.FileHandler",
+     168	            "level": "INFO",
+     169	            "formatter": "standard",
+     170	            "filename": ".log",
+     171	            "mode": "a",
+     172	        },
+     173	        "console": {
+     174	            "class": "logging.StreamHandler",
+     175	            "level": "DEBUG",
+     176	            "formatter": "colored",
+     177	            "stream": "ext://sys.stdout",
+     178	        },
+     179	    },
+     180	    "loggers": {
+     181	        "": {
+     182	            "handlers": ["console", "file"],
+     183	            "level": "INFO",
+     184	            "propagate": False,
+     185	        },
+     186	    },
+     187	}
+     188	
+     189	# Instantiate settings (fails on validation error)
+     190	try:
+     191	    settings = Settings()
+     192	    LOGGING_CONFIG["handlers"]["file"]["filename"] = settings.LOG_FILE_PATH
+     193	    logging.config.dictConfig(LOGGING_CONFIG)
+     194	    logging.info("Settings loaded successfully")
+     195	except ValidationError as exc:
+     196	    logging.error("🚨 Configuration error:\n", exc, file=sys.stderr)
+     197	    sys.exit(1)
+     198	
+     199	
+     200	if __name__ == "__main__":
+     201	    settings_json = settings.model_dump_json(indent=2)
+     202	    logging.info(f"{settings_json}")
 
 ------------------------------ firewall_agent/database.py ------------------------------
        1	"""SQLAlchemy engine / session boilerplate."""
@@ -943,40 +1024,77 @@
       15	Base = declarative_base()
 
 ------------------------------ firewall_agent/dependencies.py ------------------------------
-       1	"""FastAPI dependency helpers – keep them centralised for easy overriding in tests."""
-       2	from __future__ import annotations
-       3	
-       4	from typing import Generator
-       5	
-       6	from fastapi import Depends  # re‑export for use in other modules
-       7	from sqlalchemy.orm import Session
-       8	
-       9	from .database import SessionLocal
-      10	from .backends import backend as _backend  # singleton
-      11	from .backends.base import FirewallBackend
-      12	from .clients.core import CoreClient
-      13	from .config import settings
+       1	from __future__ import annotations
+       2	
+       3	from typing import Generator
+       4	
+       5	from fastapi import Depends  # re‑export for use in other modules
+       6	from sqlalchemy.orm import Session
+       7	
+       8	from .database import SessionLocal
+       9	from .backends import backend as _backend  # singleton
+      10	from .backends.base import FirewallBackend
+      11	from .clients.core import CoreClient
+      12	from .config import settings
+      13	from .models import AgentCredentials
       14	
       15	# ----------------------------- Database ---------------------------
       16	
       17	def get_db() -> Generator[Session, None, None]:
-      18	    db = SessionLocal()
-      19	    try:
-      20	        yield db
-      21	    finally:
-      22	        db.close()
-      23	
-      24	
-      25	# ----------------------------- Backend ---------------------------
-      26	
-      27	def get_backend() -> FirewallBackend:  # pragma: no cover
-      28	    return _backend
+      18	    """
+      19	    Returns a SQLAlchemy session for dependency injection.
+      20	
+      21	    Yields:
+      22	        Session: A SQLAlchemy session instance.
+      23	    """
+      24	    db: Session = SessionLocal()
+      25	    try:
+      26	        yield db
+      27	    finally:
+      28	        db.close()
       29	
       30	
-      31	# ------------------------------ Core -----------------------------
+      31	# ----------------------------- Backend ---------------------------
       32	
-      33	def get_core_client() -> CoreClient:  # pragma: no cover
-      34	    return CoreClient(str(settings.CORE_URL))
+      33	def get_backend() -> FirewallBackend:  # pragma: no cover
+      34	    """
+      35	    Returns the singleton instance of the backend.
+      36	
+      37	    Returns:
+      38	        FirewallBackend: The backend instance (e.g., Nginx).
+      39	    """
+      40	    return _backend
+      41	
+      42	
+      43	# ------------------------------ Core -----------------------------
+      44	
+      45	
+      46	def get_core_client(db: Session) -> CoreClient:
+      47	    """
+      48	    Create a CoreClient using the stored actor token from the database.
+      49	    Raises HTTPException if no token is available.
+      50	
+      51	    Args:
+      52	        db (Session): The SQLAlchemy session to retrieve credentials.
+      53	
+      54	    Returns:
+      55	        CoreClient: The CoreClient instance initialized with the actor token.
+      56	
+      57	    Raises:
+      58	        HTTPException: If no token is found for the agent in the database.
+      59	    """
+      60	    from fastapi import HTTPException
+      61	
+      62	    # Retrieve the agent's credentials from the local database
+      63	    cred: AgentCredentials | None = db.query(AgentCredentials).first()
+      64	    token: str | None = cred.token if cred else None
+      65	
+      66	    if not token:
+      67	        raise HTTPException(
+      68	            status_code=500, detail="Missing actor token: please register the agent first.")
+      69	
+      70	    # Initialize CoreClient with actor_token
+      71	    return CoreClient(str(settings.CORE_URL), actor_token=token)
 
 ------------------------------ firewall_agent/__init__.py ------------------------------
        1	"""Package entry‑point – re‑export the FastAPI application."""
@@ -1099,7 +1217,7 @@
        9	from ..backends import backend
       10	from ..clients.core import CoreClient
       11	from ..config import settings
-      12	from ..dependencies import get_db, get_core_client
+      12	from ..dependencies import get_core_client
       13	from ..models import AliasDB, RuleDB
       14	
       15	
@@ -1157,33 +1275,32 @@
       67	    return new_rules, removed_rules
       68	
       69	
-      70	def sync_firewall() -> None:
+      70	def sync_firewall(db: Session) -> None:
       71	    """High‑level sync: fetch → diff → commit → notify Core."""
-      72	    db: Session = next(get_db())  # type: ignore[arg-type]
-      73	    core: CoreClient = get_core_client()
-      74	    try:
-      75	        new_rules, removed_rules = _collect_remote(db)
-      76	        if new_rules or removed_rules:
-      77	            db.commit()
-      78	            logging.info("Firewall sync: +%s  -%s", len(new_rules), len(removed_rules))
-      79	            _notify_core(core, new_rules, removed_rules)
-      80	    except Exception as exc:  # noqa: BLE001
-      81	        logging.error("Firewall sync failed: %s", exc)
-      82	    finally:
-      83	        db.close()
+      72	    core: CoreClient = get_core_client(db)
+      73	    try:
+      74	        new_rules, removed_rules = _collect_remote(db)
+      75	        if new_rules or removed_rules:
+      76	            db.commit()
+      77	            logging.info("Firewall sync: +%s  -%s", len(new_rules), len(removed_rules))
+      78	            _notify_core(core, new_rules, removed_rules)
+      79	    except Exception as exc:  # noqa: BLE001
+      80	        logging.error("Firewall sync failed: %s", exc)
+      81	    finally:
+      82	        db.close()
+      83	
       84	
-      85	
-      86	def _notify_core(core: CoreClient, new_rules: List[Dict], removed_rules: List[Dict]) -> None:
-      87	    for rule in new_rules:
-      88	        try:
-      89	            core.create_rule(**rule)
-      90	        except Exception as exc:  # noqa: BLE001
-      91	            logging.warning("Failed to notify Core (create): %s", exc)
-      92	    for rule in removed_rules:
-      93	        try:
-      94	            core.delete_rule(rule["firewall_rule_uuid"])
-      95	        except Exception as exc:  # noqa: BLE001
-      96	            logging.warning("Failed to notify Core (delete): %s", exc)
+      85	def _notify_core(core: CoreClient, new_rules: List[Dict], removed_rules: List[Dict]) -> None:
+      86	    for rule in new_rules:
+      87	        try:
+      88	            core.create_rule(**rule)
+      89	        except Exception as exc:  # noqa: BLE001
+      90	            logging.warning("Failed to notify Core (create): %s", exc)
+      91	    for rule in removed_rules:
+      92	        try:
+      93	            core.delete_rule(rule["firewall_rule_uuid"])
+      94	        except Exception as exc:  # noqa: BLE001
+      95	            logging.warning("Failed to notify Core (delete): %s", exc)
 
 ------------------------------ pyproject.toml ------------------------------
        1	[tool.poetry]

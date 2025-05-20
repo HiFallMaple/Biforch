@@ -1,0 +1,12 @@
+# docker-compose.dev.yml
+services:
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./core:/app/core
+    env_file:
+      - .env
+    ports:
+      - "$PORT:8000"

@@ -1,33 +1,1726 @@
-[32mINFO[0m:    :__main__:test.py:50 [19:11:56]: 這是 INFO
-[33mWARNING[0m: :__main__:test.py:51 [19:11:56]: 這是 WARNING
-[31mERROR[0m:   :__main__:test.py:52 [19:11:56]: 這是 ERROR
-[32mINFO[0m:    :__main__:test.py:54 [19:12:58]: 這是 INFO
-[33mWARNING[0m: :__main__:test.py:55 [19:12:58]: 這是 WARNING
-[31mERROR[0m:   :__main__:test.py:56 [19:12:58]: 這是 ERROR
-2025-05-19 19:13:41,452 [INFO] __main__: 這是 INFO
-2025-05-19 19:13:41,452 [WARNING] __main__: 這是 WARNING
-2025-05-19 19:13:41,452 [ERROR] __main__: 這是 ERROR
-2025-05-19 19:14:43,714 [INFO] __main__: 這是 INFO
-2025-05-19 19:14:43,714 [WARNING] __main__: 這是 WARNING
-2025-05-19 19:14:43,714 [ERROR] __main__: 這是 ERROR
-2025-05-19 19:14:54,081 [INFO] __main__: 這是 INFO
-2025-05-19 19:14:54,081 [WARNING] __main__: 這是 WARNING
-2025-05-19 19:14:54,081 [ERROR] __main__: 這是 ERROR
-2025-05-19 19:15:03,672 [INFO] __main__: 這是 INFO
-2025-05-19 19:15:03,672 [WARNING] __main__: 這是 WARNING
-2025-05-19 19:15:03,672 [ERROR] __main__: 這是 ERROR
-2025-05-19 19:15:28,332 [INFO] __main__: 這是 INFO
-2025-05-19 19:15:28,333 [WARNING] __main__: 這是 WARNING
-2025-05-19 19:15:28,333 [ERROR] __main__: 這是 ERROR
-2025-05-20 16:34:30,856 [INFO] root: 這是 INFO
-2025-05-20 16:34:30,856 [WARNING] root: 這是 WARNING
-2025-05-20 16:34:30,856 [ERROR] root: 這是 ERROR
-2025-05-20 16:34:33,951 [INFO] root: 這是 INFO
-2025-05-20 16:34:33,951 [WARNING] root: 這是 WARNING
-2025-05-20 16:34:33,951 [ERROR] root: 這是 ERROR
-2025-05-20 16:35:04,326 [INFO] test.py: 這是 INFO
-2025-05-20 16:35:04,326 [WARNING] test.py: 這是 WARNING
-2025-05-20 16:35:04,326 [ERROR] test.py: 這是 ERROR
-2025-05-20 16:35:10,577 [INFO] test.py: 這是 INFO
-2025-05-20 16:35:10,577 [WARNING] test.py: 這是 WARNING
-2025-05-20 16:35:10,577 [ERROR] test.py: 這是 ERROR
+============================== PROJECT TREE ==============================
+.
+├── data
+├── docker-compose.dev.yml
+├── docker-compose.prod.yml
+├── Dockerfile.dev
+├── Dockerfile.prod
+├── entrypoint.sh
+├── .env
+├── pyproject.toml
+├── README.md
+├── reverse_proxy_agent
+│   ├── api.py
+│   ├── backends
+│   │   ├── base.py
+│   │   ├── __init__.py
+│   │   └── nginx.py
+│   ├── clients
+│   │   └── core.py
+│   ├── cli.py
+│   ├── config.py
+│   ├── database.py
+│   ├── dependencies.py
+│   ├── __init__.py
+│   ├── models.py
+│   ├── schemas.py
+│   └── services
+│       └── sync.py
+├── test.py
+└── tests
+    ├── conftest.py
+    ├── test_api_invalid_inputs.py
+    ├── test_api.py
+    ├── test_core_client.py
+    ├── test_lifespan.py
+    ├── test_nginx_backend.py
+    ├── test_schemas.py
+    ├── test_service_sync.py
+    └── test_utils.py
+
+7 directories, 31 files
+
+============================ FILE CONTENTS ==============================
+------------------------------ docker-compose.dev.yml ------------------------------
+       1	# docker-compose.dev.yml
+       2	services:
+       3	  reverse-proxy-agent:
+       4	    build:
+       5	      context: .
+       6	      dockerfile: Dockerfile.dev
+       7	    volumes:
+       8	      - ./reverse_proxy_agent:/app/reverse_proxy_agent
+       9	    env_file:
+      10	      - .env
+      11	    ports:
+      12	      - "$PORT:8000"
+
+------------------------------ docker-compose.prod.yml ------------------------------
+       1	# docker-compose.prod.yml
+       2	
+       3	services:
+       4	  reverse-proxy-agent:
+       5	    build:
+       6	      context: .
+       7	      dockerfile: Dockerfile.prod
+       8	    env_file:
+       9	      - .env
+      10	    ports:
+      11	      - "$PORT:8000"
+      12	    volumes:
+      13	      - ./data:/app/data
+      14	    restart: always
+
+------------------------------ Dockerfile.dev ------------------------------
+       1	# Dockerfile.dev
+       2	FROM python:3.12-alpine
+       3	
+       4	RUN apk add --no-cache --virtual .build-deps \
+       5	      musl-dev \
+       6	      libffi-dev \
+       7	      openssl-dev
+       8	
+       9	RUN pip install --no-cache poetry
+      10	
+      11	WORKDIR /app
+      12	RUN mkdir -p data
+      13	COPY pyproject.toml README.md entrypoint.sh ./
+      14	RUN chmod +x entrypoint.sh
+      15	
+      16	RUN poetry lock \
+      17	&& poetry config virtualenvs.create false \
+      18	&& poetry install --no-root --no-interaction --no-ansi --with dev \
+      19	&& apk del .build-deps 
+      20	
+      21	EXPOSE 8000
+      22	
+      23	# CMD ["./entrypoint.sh"]
+      24	CMD ["tail", "-f", "/dev/null"]
+
+------------------------------ Dockerfile.prod ------------------------------
+       1	# Dockerfile.prod
+       2	FROM python:3.12-alpine
+       3	
+       4	RUN apk add --no-cache --virtual .build-deps \
+       5	      musl-dev \
+       6	      libffi-dev \
+       7	      openssl-dev
+       8	
+       9	RUN pip install --no-cache poetry
+      10	
+      11	WORKDIR /app
+      12	
+      13	RUN mkdir -p data
+      14	
+      15	COPY reverse_proxy_agent/ ./reverse_proxy_agent/
+      16	COPY pyproject.toml README.md entrypoint.sh ./
+      17	RUN chmod +x entrypoint.sh
+      18	
+      19	RUN poetry lock \
+      20	&& poetry config virtualenvs.create false \
+      21	&& poetry install --no-interaction --no-ansi \
+      22	&& apk del .build-deps 
+      23	
+      24	EXPOSE 8000
+      25	
+      26	CMD ["./entrypoint.sh"]
+
+------------------------------ entrypoint.sh ------------------------------
+       1	#!/bin/sh
+       2	
+       3	poetry run reverse-proxy-agent init &&
+       4	poetry run reverse-proxy-agent serve
+
+------------------------------ .env ------------------------------
+       1	CONFIG_DIR='../nginx/auto.d/'
+       2	CORE_URL='http://192.168.87.10:8001'
+       3	AGENT_NAME='nginx'
+       4	AGENT_URL='http://192.168.87.10:8002'
+       5	PROXY_BACKEND=nginx
+       6	TIMEOUT=5
+       7	INTERNAL_HOST='0.0.0.0'
+       8	INTERNAL_PORT='8002'
+       9	REVERSE_PROXY_IP='192.168.87.10'
+      10	REVERSE_PROXY_PORTS=[80,443]
+      11	RELOAD=False
+
+------------------------------ pyproject.toml ------------------------------
+       1	[tool.poetry]
+       2	name        = "biforch-reverse-proxy-agent"
+       3	version     = "0.1.0"
+       4	description = "Reverse-proxy agent for Biforch platform"
+       5	authors     = ["FallMaple tony53517230@gmail.com"]
+       6	license     = "MIT"
+       7	readme      = "README.md"
+       8	
+       9	packages = [
+      10	  { include = "reverse_proxy_agent" }
+      11	]
+      12	
+      13	[tool.poetry.dependencies]
+      14	python            = ">=3.11,<4.0"
+      15	fastapi           = "^0.110"
+      16	uvicorn           = { version = "^0.29", extras = ["standard"] }
+      17	requests          = "^2.32"
+      18	SQLAlchemy        = "^2.0"
+      19	python-dotenv     = "^1.0"
+      20	pydantic          = "^2.7"
+      21	pydantic-settings = "^2.3"
+      22	typer = { version = "^0.9.0", extras = ["all"] }
+      23	
+      24	# ---------- Dev dependencies ----------
+      25	[tool.poetry.group.dev.dependencies]
+      26	alembic        = "^1.13.1"
+      27	pytest         = "^8.2"
+      28	pytest-cov     = "^5.0"
+      29	pytest-asyncio = "^0.23"
+      30	httpx          = "^0.27"
+      31	pytest-mock    = "^3.12"
+      32	factory-boy    = "^3.3"
+      33	freezegun      = "^1.4"
+      34	
+      35	# ---------- CLI entry ----------
+      36	[tool.poetry.scripts]
+      37	reverse-proxy-agent = "reverse_proxy_agent.cli:app"
+      38	
+      39	# ---------- Build backend ----------
+      40	[build-system]
+      41	requires      = ["poetry-core>=1.8.0"]
+      42	build-backend = "poetry.core.masonry.api"
+
+------------------------------ README.md ------------------------------
+       1	# Biforch Reverse-Proxy Agent
+       2	
+       3	> High‑level, opinionated reverse‑proxy side‑car that keeps backend ACLs in sync
+       4	> with **Biforch Core** — ships with Nginx today and is built to support Caddy, Traefik, HAProxy and other engines tomorrow.
+       5	
+       6	![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+       7	![License](https://img.shields.io/badge/license-MIT-green)
+       8	
+       9	---
+      10	
+      11	## ✨ Features
+      12	
+      13	* **FastAPI** REST endpoint for runtime rule management.
+      14	* **SQLite** + SQLAlchemy for a lightweight local cache.
+      15	* **Pluggable back‑ends** – currently Nginx; Caddy/Traefik/Haproxy ready.
+      16	* **Zero‑touch discovery** – detects new `*.conf` snippets, registers them with Core.
+      17	* **Idempotent sync** – generates per‑service snippets and reloads Nginx when needed.
+      18	
+      19	## 📂 Project layout
+      20	
+      21	```text
+      22	reverse_proxy_agent/         ← package root  
+      23	├── api.py                   ← FastAPI app entry‑point  
+      24	├── config.py                ← typed settings, loaded from `.env`  
+      25	├── models.py / database.py  ← SQLAlchemy ORM & engine  
+      26	├── services/                ← business logic (rule sync, discovery)  
+      27	├── backends/                ← proxy back‑end implementations  
+      28	└── …                        ← utils, schemas, clients…
+      29	```
+      30	
+      31	## ⚙️ Configuration (`.env`)
+      32	
+      33	| Key             | Example                                | Notes                                |
+      34	| --------------- | -------------------------------------- | ------------------------------------ |
+      35	| `CONFIG_DIR`    | `../nginx/auto.d/`                     | Folder where ACL snippets live       |
+      36	| `DB_PATH`       | `reverse_proxy.db`                     | Relative/absolute SQLite path        |
+      37	| `CORE_URL`      | `http://192.168.87.10:8001`            | Biforch Core base URL                |
+      38	| `BIFORCH_TOKEN`      | `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`     | Bearer token recognised by Core      |
+      39	| `BIFORCH_UUID`       | `589f29be-5729-4ac9-9004-723decbb897f` | Reverse‑proxy agent UUID             |
+      40	| `PROXY_BACKEND` | `nginx`                                | allowed values (`nginx`, `caddy`, …) |
+      41	| `TIMEOUT`       | `5`                                    | outgoing HTTP timeout (seconds)      |
+      42	
+      43	## 🚀 Usage
+      44	
+      45	### Local dev
+      46	
+      47	```bash
+      48	# install deps & the package itself
+      49	poetry install --with dev
+      50	
+      51	# run the API (reload enabled)
+      52	poetry run reverse-proxy-agent
+      53	```
+      54	
+      55	### Production (systemd example)
+      56	
+      57	```ini
+      58	[Unit]
+      59	Description=Biforch Reverse-Proxy Agent
+      60	After=network.target
+      61	
+      62	[Service]
+      63	User=www-data
+      64	WorkingDirectory=/opt/biforch-rp
+      65	EnvironmentFile=/opt/biforch-rp/.env
+      66	ExecStart=/opt/biforch-rp/.venv/bin/reverse-proxy-agent
+      67	Restart=on-failure
+      68	
+      69	[Install]
+      70	WantedBy=multi-user.target
+      71	```
+      72	
+      73	## 🧪 Tests
+      74	
+      75	```bash
+      76	poetry run pytest -q --cov
+      77	```
+      78	
+      79	## 🤝 Contributing
+      80	
+      81	1. Fork & clone
+      82	2. `poetry install --with dev`
+      83	3. Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages
+      84	4. Run `pre-commit run --all-files` before pushing
+      85	
+      86	## 📝 License
+      87	
+      88	Licensed under the **MIT License** – see [`LICENSE`](LICENSE) for details.
+
+------------------------------ reverse_proxy_agent/api.py ------------------------------
+       1	"""FastAPI entry‑point – **only** routing / HTTP concerns live here."""
+       2	from __future__ import annotations
+       3	
+       4	from contextlib import asynccontextmanager
+       5	from pathlib import Path
+       6	from typing import List
+       7	
+       8	from fastapi import Depends, FastAPI, HTTPException
+       9	from sqlalchemy.orm import Session
+      10	
+      11	from .config import settings
+      12	from .models import RuleDB, ServiceDB
+      13	from .schemas import RuleIn, RuleOut
+      14	from .dependencies import get_db
+      15	from .services.sync import sync_to_backend, announce_new_service
+      16	
+      17	# ------------------------------------------------------------------------
+      18	# Lifespan – at startup discover *.conf & register missing services
+      19	# ------------------------------------------------------------------------
+      20	
+      21	
+      22	@asynccontextmanager
+      23	async def lifespan(_: FastAPI):
+      24	    Path(settings.CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+      25	    db: Session = next(get_db())  
+      26	    try:
+      27	        for cfg in Path(settings.CONFIG_DIR).glob("*.conf"):
+      28	            svc = cfg.stem
+      29	            if not db.query(ServiceDB).filter_by(name=svc).first():
+      30	                announce_new_service(svc, db)
+      31	        db.commit()
+      32	    finally:
+      33	        db.close()
+      34	    yield
+      35	
+      36	# ------------------------------------------------------------------------
+      37	# FastAPI app
+      38	# ------------------------------------------------------------------------
+      39	
+      40	app = FastAPI(title="Reverse‑Proxy Agent", lifespan=lifespan)
+      41	
+      42	
+      43	# ------------------------------- routes ----------------------------------
+      44	
+      45	@app.post("/rules/{service_id}", response_model=RuleOut)
+      46	def create_rule(service_id: int, body: RuleIn, db: Session = Depends(get_db)) -> RuleOut:
+      47	    svc = db.get(ServiceDB, service_id)
+      48	    if svc is None:
+      49	        raise HTTPException(404, "service not registered")
+      50	    rule = RuleDB(service_name=svc.name, action=body.action, ip=str(body.ip))
+      51	    db.add(rule)
+      52	    db.commit()
+      53	    db.refresh(rule)
+      54	    sync_to_backend(db)
+      55	    return RuleOut(id=rule.id, service_id=service_id, action=rule.action, ip=rule.ip)
+      56	
+      57	
+      58	@app.put("/rules/{service_id}", response_model=List[RuleOut])
+      59	def replace_rules(service_id: int, body: RuleIn, db: Session = Depends(get_db)) -> List[RuleOut]:
+      60	    """Replace all rules for the given service."""
+      61	    svc = db.get(ServiceDB, service_id)
+      62	    if svc is None:
+      63	        raise HTTPException(status_code=404, detail="Service not registered")
+      64	
+      65	    db.query(RuleDB).filter_by(service_name=svc.name).delete()
+      66	    rule = RuleDB(service_name=svc.name, action=body.action, ip=str(body.ip))
+      67	    db.add(rule)
+      68	    db.commit()
+      69	    db.refresh(rule)
+      70	
+      71	    sync_to_backend(db)
+      72	
+      73	    return [RuleOut(id=rule.id, service_id=service_id, action=rule.action, ip=rule.ip)]
+      74	
+      75	
+      76	@app.delete("/rules/{service_id}")
+      77	def delete_rules(service_id: int, db: Session = Depends(get_db)) -> dict[str, int]:
+      78	    """Delete all rules for the given service."""
+      79	    svc = db.get(ServiceDB, service_id)
+      80	    if svc is None:
+      81	        raise HTTPException(status_code=404, detail="Service not found")
+      82	
+      83	    deleted = db.query(RuleDB).filter_by(service_name=svc.name).delete()
+      84	    if deleted == 0:
+      85	        raise HTTPException(status_code=404, detail="No rules to delete")
+      86	
+      87	    db.commit()
+      88	    sync_to_backend(db)
+      89	    return {"deleted": deleted}
+
+------------------------------ reverse_proxy_agent/backends/base.py ------------------------------
+       1	"""Common backend interface – every backend must implement ProxyBackend."""
+       2	from typing import Dict, List, Protocol
+       3	
+       4	class ProxyBackend(Protocol):
+       5	    """Abstract reverse-proxy backend API."""
+       6	
+       7	    def apply_rules(self, rules: Dict[str, List[str]]) -> None: ...
+       8	    def add_rule(self, service: str, line: str) -> None: ...
+       9	    def remove_rule(self, service: str, line: str) -> None: ...
+      10	    def reload(self) -> None: ...
+
+------------------------------ reverse_proxy_agent/backends/__init__.py ------------------------------
+       1	"""Backend factory + singleton instance."""
+       2	from pathlib import Path
+       3	
+       4	from ..config import settings
+       5	from .base import ProxyBackend
+       6	from .nginx import NginxBackend
+       7	
+       8	__all__ = ["get_backend", "backend"]
+       9	
+      10	
+      11	def get_backend() -> ProxyBackend:
+      12	    """Create backend according to settings.PROXY_BACKEND."""
+      13	    match settings.PROXY_BACKEND:
+      14	        case "nginx":
+      15	            return NginxBackend(Path(settings.CONFIG_DIR))
+      16	        # case "caddy":
+      17	        #     from .caddy import CaddyBackend
+      18	        #     return CaddyBackend(settings.CADDY_API_URL, settings.CADDY_TOKEN)
+      19	        case _:
+      20	            raise RuntimeError(
+      21	                f"Unknown proxy backend: {settings.PROXY_BACKEND}")
+      22	
+      23	
+      24	# Single backend instance reused across the app
+      25	backend: ProxyBackend = get_backend()
+
+------------------------------ reverse_proxy_agent/backends/nginx.py ------------------------------
+       1	"""Nginx backend – write per‑service allow/deny snippets then reload."""
+       2	from __future__ import annotations
+       3	
+       4	import logging
+       5	import os
+       6	import subprocess
+       7	from pathlib import Path
+       8	from typing import Dict, List
+       9	
+      10	from .base import ProxyBackend
+      11	
+      12	class NginxBackend(ProxyBackend):
+      13	    def __init__(self, config_dir: Path) -> None:
+      14	        self.config_dir = config_dir
+      15	
+      16	    # ------------------------------------------------------------------ sync
+      17	    def apply_rules(self, rules: Dict[str, List[str]]) -> None:
+      18	        os.makedirs(self.config_dir, exist_ok=True)
+      19	        for svc, lines in rules.items():
+      20	            path = self.config_dir / f"{svc}.conf"
+      21	            content = "\n".join(lines) + "\n"
+      22	            if not path.exists() or path.read_text() != content:
+      23	                path.write_text(content)
+      24	        self.reload()
+      25	
+      26	    # ---------------------------------------------------------------- reload
+      27	    def reload(self) -> None:  # pragma: no cover – depends on system Nginx
+      28	        try:
+      29	            subprocess.run(["sudo", "nginx", "-s", "reload"], check=True)
+      30	            logging.info("🔄 Nginx reloaded")
+      31	        except Exception as exc:  # noqa: BLE001
+      32	            logging.error("❌ Failed to reload Nginx: %s", exc)
+      33	            raise
+
+------------------------------ reverse_proxy_agent/clients/core.py ------------------------------
+       1	import logging
+       2	import requests
+       3	from typing import Any, Dict, List, Optional
+       4	from dataclasses import dataclass
+       5	
+       6	# ---------------------------------------------------------------------
+       7	# Data models
+       8	# ---------------------------------------------------------------------
+       9	@dataclass
+      10	class PendingRequest:
+      11	    request_id: int
+      12	    secret: str
+      13	
+      14	
+      15	@dataclass
+      16	class PendingItem:
+      17	    id: int
+      18	    type: str
+      19	    data: str
+      20	    src_ip: str
+      21	    secret: str
+      22	    created_at: str
+      23	
+      24	
+      25	@dataclass
+      26	class PendingApprove:
+      27	    id: int
+      28	    status: str
+      29	    entity_id: Optional[int]
+      30	
+      31	
+      32	@dataclass
+      33	class Service:
+      34	    id: int
+      35	
+      36	
+      37	@dataclass
+      38	class Rule:
+      39	    firewall_rule_uuid: str
+      40	
+      41	# ---------------------------------------------------------------------
+      42	# Client implementation
+      43	# ---------------------------------------------------------------------
+      44	
+      45	
+      46	class CoreClientError(Exception):
+      47	    """Generic exception for CoreClient errors."""
+      48	    pass
+      49	
+      50	
+      51	class CoreClient:
+      52	    def __init__(
+      53	        self,
+      54	        base_url: str,
+      55	        admin_token: Optional[str] = None,
+      56	        actor_token: Optional[str] = None,
+      57	        timeout: int = 10,
+      58	    ):
+      59	        """
+      60	        :param base_url: URL of Core service (e.g. http://localhost:8001)
+      61	        :param admin_token: Bearer token for admin operations
+      62	        :param actor_token: Bearer token for actor operations (firewall/proxy/discovery)
+      63	        :param timeout: HTTP request timeout in seconds
+      64	        """
+      65	        self.base_url = base_url.rstrip('/')
+      66	        self._admin_token = admin_token
+      67	        self._actor_token = actor_token
+      68	        self.timeout = timeout
+      69	
+      70	    def set_actor_token(self, token: str) -> None:
+      71	        """Set token for actor (firewall/proxy/discovery) calls."""
+      72	        self._actor_token = token
+      73	
+      74	    def _build_headers(self, admin: bool = False) -> Dict[str, str]:
+      75	        headers: Dict[str, str] = {}
+      76	        if admin:
+      77	            if not self._admin_token:
+      78	                raise CoreClientError(
+      79	                    "Admin token is required for this operation")
+      80	            headers['Authorization'] = f"Bearer {self._admin_token}"
+      81	        else:
+      82	            if not self._actor_token:
+      83	                raise CoreClientError(
+      84	                    "Actor token is required for this operation")
+      85	            headers['Authorization'] = f"Bearer {self._actor_token}"
+      86	        return headers
+      87	
+      88	    def _request(
+      89	        self,
+      90	        method: str,
+      91	        path: str,
+      92	        json: Optional[Dict[str, Any]] = None,
+      93	        admin: bool = False,
+      94	        auth: bool = True,
+      95	    ) -> Any:
+      96	        """
+      97	        Internal helper to send HTTP requests to Core.
+      98	
+      99	        :param method: HTTP method
+     100	        :param path: API path (prefixed with base_url)
+     101	        :param json: JSON body
+     102	        :param admin: whether to use admin token
+     103	        :param auth: whether to include Authorization header
+     104	        """
+     105	        url = f"{self.base_url}{path}"
+     106	        headers = self._build_headers(admin=admin) if auth else {}
+     107	        resp = requests.request(
+     108	            method, url, json=json, headers=headers, timeout=self.timeout
+     109	        )
+     110	        try:
+     111	            resp.raise_for_status()
+     112	        except Exception as exc:
+     113	            logging.error(f"HTTP {method} {url} failed: {exc}, {resp.text}")
+     114	            raise CoreClientError(f"{method} {url} failed: {resp.text}")
+     115	        if resp.text:
+     116	            return resp.json()
+     117	        return None
+     118	
+     119	    # -----------------------------------------------------------------
+     120	    # Registration (pending queue) – public endpoints, no auth required
+     121	    # -----------------------------------------------------------------
+     122	    def register_firewall(self, name: str, api_url: str) -> PendingRequest:
+     123	        """Enqueue a firewall registration (returns request_id and secret). No token needed."""
+     124	        data = self._request(
+     125	            'POST',
+     126	            '/firewall',
+     127	            json={'name': name, 'api_url': api_url},
+     128	            admin=False,
+     129	            auth=False,
+     130	        )
+     131	        return PendingRequest(**data)
+     132	
+     133	    def register_reverse_proxy(
+     134	        self, name: str, ip: str, ports: List[int], api_url: str
+     135	    ) -> PendingRequest:
+     136	        """Enqueue a reverse-proxy registration. No token needed."""
+     137	        data = self._request(
+     138	            'POST',
+     139	            '/reverse_proxy',
+     140	            json={'name': name, 'ip': ip, 'ports': ports, 'api_url': api_url},
+     141	            admin=False,
+     142	            auth=False,
+     143	        )
+     144	        return PendingRequest(**data)
+     145	
+     146	    def register_service_discovery(
+     147	        self, name: str, bind_reverse_proxy_id: int, api_url: str
+     148	    ) -> PendingRequest:
+     149	        """Enqueue a service-discovery registration. No token needed."""
+     150	        data = self._request(
+     151	            'POST',
+     152	            '/service_discovery',
+     153	            json={
+     154	                'name': name,
+     155	                'bind_reverse_proxy_id': bind_reverse_proxy_id,
+     156	                'api_url': api_url,
+     157	            },
+     158	            admin=False,
+     159	            auth=False,
+     160	        )
+     161	        return PendingRequest(**data)
+     162	
+     163	    # -----------------------------------------------------------------
+     164	    # Admin: pending operations
+     165	    # -----------------------------------------------------------------
+     166	    def list_pending(self) -> List[PendingItem]:
+     167	        """List all pending registration requests (admin only)."""
+     168	        items = self._request('GET', '/pending_registrations', admin=True)
+     169	        return [PendingItem(**i) for i in items]
+     170	
+     171	    def approve_pending(self, request_id: int) -> PendingApprove:
+     172	        """Approve a pending request by ID (admin only)."""
+     173	        data = self._request(
+     174	            'PATCH',
+     175	            f'/pending_registrations/{request_id}',
+     176	            json={'action': 'approve'},
+     177	            admin=True,
+     178	        )
+     179	        return PendingApprove(**data)
+     180	
+     181	    def reject_pending(self, request_id: int) -> PendingApprove:
+     182	        """Reject a pending request by ID (admin only)."""
+     183	        data = self._request(
+     184	            'PATCH',
+     185	            f'/pending_registrations/{request_id}',
+     186	            json={'action': 'reject'},
+     187	            admin=True,
+     188	        )
+     189	        return PendingApprove(**data)
+     190	
+     191	    # -----------------------------------------------------------------
+     192	    # Admin: delete approved entities
+     193	    # -----------------------------------------------------------------
+     194	    def delete_firewall(self, fw_id: int) -> None:
+     195	        """Delete a registered firewall (admin only)."""
+     196	        self._request('DELETE', f'/firewall/{fw_id}', admin=True)
+     197	
+     198	    def delete_reverse_proxy(self, rp_id: int) -> None:
+     199	        """Delete a registered reverse proxy (admin only)."""
+     200	        self._request('DELETE', f'/reverse_proxy/{rp_id}', admin=True)
+     201	
+     202	    def delete_service_discovery(self, sd_id: int) -> None:
+     203	        """Delete a registered service discovery (admin only)."""
+     204	        self._request('DELETE', f'/service_discovery/{sd_id}', admin=True)
+     205	
+     206	    # -----------------------------------------------------------------
+     207	    # Actor: manage services
+     208	    # -----------------------------------------------------------------
+     209	    def create_service(self, service: str, reverse_proxy_uuid: str) -> Service:
+     210	        """Create a new service (actor token required)."""
+     211	        data = self._request(
+     212	            'POST',
+     213	            '/service',
+     214	            json={'service': service, 'reverse_proxy_uuid': reverse_proxy_uuid},
+     215	            admin=False,
+     216	        )
+     217	        return Service(**data)
+     218	
+     219	    def delete_service(self, service_id: int) -> None:
+     220	        """Delete an existing service (actor token required)."""
+     221	        self._request('DELETE', f'/service/{service_id}', admin=False)
+     222	
+     223	    # -----------------------------------------------------------------
+     224	    # Actor: manage rules (firewall actor)
+     225	    # -----------------------------------------------------------------
+     226	    def create_rule(
+     227	        self, firewall_rule_uuid: str, action: str, ip: str, service: str
+     228	    ) -> Rule:
+     229	        """Create a new firewall rule (firewall actor token required)."""
+     230	        data = self._request(
+     231	            'POST',
+     232	            '/rules',
+     233	            json={
+     234	                'firewall_rule_uuid': firewall_rule_uuid,
+     235	                'action': action,
+     236	                'ip': ip,
+     237	                'service': service,
+     238	            },
+     239	            admin=False,
+     240	        )
+     241	        return Rule(**data)
+     242	
+     243	    def delete_rule(self, firewall_rule_uuid: str) -> None:
+     244	        """Delete a firewall rule (firewall actor token required)."""
+     245	        self._request('DELETE', f'/rules/{firewall_rule_uuid}', admin=False)
+
+------------------------------ reverse_proxy_agent/cli.py ------------------------------
+       1	#!/usr/bin/env python3
+       2	# reverse_proxy_agent/cli.py
+       3	
+       4	"""
+       5	Command-line interface for Biforch Reverse Proxy Agent.
+       6	Provides commands to enqueue registration with Biforch Core
+       7	and to start the API server.
+       8	After registration, stores received UUID and token in local database.
+       9	"""
+      10	import logging
+      11	import threading
+      12	
+      13	import typer
+      14	import uvicorn
+      15	from fastapi import FastAPI, HTTPException
+      16	from pydantic import BaseModel
+      17	from typing import Dict, Literal, Optional
+      18	
+      19	from .config import settings
+      20	from .clients.core import CoreClient
+      21	from .database import SessionLocal  # This is where the session is created
+      22	from .models import AgentCredentials
+      23	
+      24	app = typer.Typer(help="Biforch Reverse Proxy Agent CLI")
+      25	
+      26	
+      27	class RegistrationCallback(BaseModel):
+      28	    """
+      29	    Model for Core's callback payload.
+      30	    Core will POST {"secret": "...", "action": "approve|reject", "uuid": "...", "token": "..."}.
+      31	    """
+      32	    secret: str
+      33	    action: Literal["approve", "reject"]
+      34	    uuid: Optional[str]
+      35	    token: Optional[str]
+      36	
+      37	
+      38	@app.command()
+      39	def init():
+      40	    """
+      41	    1) If already registered, report existing credentials and exit.
+      42	    2) Launch temporary FastAPI server to receive Core's callback.
+      43	    3) Enqueue a reverse proxy registration request to Core (using settings.CORE_URL).
+      44	    4) Block until Core calls back, then store credentials & exit.
+      45	    """
+      46	    db = SessionLocal()  # This is where we manually create the session
+      47	    try:
+      48	        # Check for existing credentials
+      49	        existing = db.query(AgentCredentials).first()
+      50	        if existing:
+      51	            logging.info(f"🔒 Already registered:")
+      52	            logging.info(f"\tUUID: {existing.uuid}")
+      53	            logging.info(f"\tToken: {existing.token}")
+      54	            return
+      55	
+      56	        callback_data: Dict[str, str] = {}
+      57	        event = threading.Event()
+      58	
+      59	        # Build temporary FastAPI app for callback
+      60	        server_app = FastAPI()
+      61	
+      62	        @server_app.post(settings.CALLBACK_PATH)
+      63	        async def receive_callback(body: RegistrationCallback):
+      64	            # Validate secret
+      65	            if body.secret != callback_data.get("secret"):
+      66	                raise HTTPException(400, "Invalid secret")
+      67	            callback_data["action"] = body.action
+      68	            # On approval, capture uuid and token
+      69	            if body.action == "approve":
+      70	                callback_data["uuid"] = body.uuid or ""
+      71	                callback_data["token"] = body.token or ""
+      72	            # Signal shutdown and notifying main thread
+      73	            server.should_exit = True
+      74	            event.set()
+      75	            return {"status": "received"}
+      76	
+      77	        # Start Uvicorn server in background
+      78	        config = uvicorn.Config(
+      79	            server_app,
+      80	            host=settings.INTERNAL_HOST,
+      81	            port=settings.INTERNAL_PORT,
+      82	            log_level="info",
+      83	            lifespan="on"
+      84	        )
+      85	        server = uvicorn.Server(config)
+      86	        thread = threading.Thread(target=server.run, daemon=True)
+      87	        thread.start()
+      88	        logging.info(
+      89	            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
+      90	        )
+      91	
+      92	        # Enqueue registration with Core
+      93	        client = CoreClient(base_url=str(settings.CORE_URL))
+      94	        pending = client.register_reverse_proxy(
+      95	            name=settings.AGENT_NAME,
+      96	            api_url=str(settings.AGENT_URL),
+      97	            ip=settings.REVERSE_PROXY_IP,
+      98	            ports=settings.REVERSE_PROXY_PORTS,
+      99	        )
+     100	        callback_data["secret"] = pending.secret
+     101	        logging.info(
+     102	            f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
+     103	        )
+     104	
+     105	        # Block until callback arrives
+     106	        event.wait()
+     107	
+     108	        # Shutdown server thread
+     109	        thread.join(timeout=1)
+     110	
+     111	        # Report and store result
+     112	        action = callback_data.get("action")
+     113	        if action == "approve":
+     114	            uuid_str = callback_data.get("uuid", "")
+     115	            token_str = callback_data.get("token", "")
+     116	            # Persist credentials in DB
+     117	            db.add(AgentCredentials(uuid=uuid_str, token=token_str))
+     118	            db.commit()
+     119	            logging.info(f"✅ Registration approved!")
+     120	            logging.info(f"\tUUID: {uuid_str}")
+     121	            logging.info(f"\tToken: {token_str}")
+     122	        else:
+     123	            logging.error("❌ Registration was rejected by Core")
+     124	    finally:
+     125	        db.close()  # Close the session after usage
+     126	
+     127	
+     128	@app.command()
+     129	def serve():
+     130	    """
+     131	    Start the Biforch Reverse Proxy Agent API server
+     132	    (which runs background syncs, etc.).
+     133	    """
+     134	    uvicorn.run(
+     135	        f"{__package__}.api:app",
+     136	        host=settings.INTERNAL_HOST,
+     137	        port=settings.INTERNAL_PORT,
+     138	        reload=settings.RELOAD,
+     139	    )
+     140	
+     141	
+     142	if __name__ == "__main__":
+     143	    app()
+
+------------------------------ reverse_proxy_agent/config.py ------------------------------
+       1	# reverse_proxy_agent/config.py
+       2	"""
+       3	Centralised runtime configuration for Reverse Proxy Agent.
+       4	
+       5	- Loads settings from environment variables via pydantic-settings
+       6	- Validates values on import (fails fast)
+       7	- Defines database paths, service URLs, and server behaviour
+       8	"""
+       9	from __future__ import annotations
+      10	
+      11	import logging
+      12	import logging.config
+      13	import sys
+      14	from pathlib import Path
+      15	from typing import Literal, List
+      16	
+      17	from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+      18	from pydantic_settings import BaseSettings
+      19	
+      20	
+      21	class Settings(BaseSettings):
+      22	    """
+      23	    Application settings loaded from environment.
+      24	
+      25	    Attributes:
+      26	        DB_PATH: Path to SQLite database file for reverse proxy state
+      27	        CONFIG_DIR: Directory where proxy configuration snippets are written
+      28	        CORE_URL: URL of Biforch Core service
+      29	        AGENT_URL: Callback/API URL of this agent
+      30	        REVERSE_PROXY_IP: IP address used by the reverse proxy
+      31	        REVERSE_PROXY_PORTS: List of ports exposed by the reverse proxy
+      32	
+      33	        AGENT_NAME: Logical name of this agent
+      34	        CALLBACK_PATH: Endpoint path for Core callbacks
+      35	
+      36	        PROXY_BACKEND: Proxy engine type (nginx, caddy, traefik, haproxy)
+      37	        TIMEOUT: HTTP request timeout (seconds)
+      38	
+      39	        INTERNAL_HOST: Uvicorn bind host
+      40	        INTERNAL_PORT: Uvicorn bind port
+      41	        RELOAD: Enable Uvicorn auto-reload in development
+      42	    """
+      43	    # default put db in data dir
+      44	    DB_PATH: Path = Field(
+      45	        "./data/db.sqlite",
+      46	        description="Path to SQLite database file",
+      47	    )
+      48	    CONFIG_DIR: Path = Field(...,
+      49	                             description="Directory for proxy config snippets")
+      50	
+      51	    # External service URLs
+      52	    CORE_URL: AnyHttpUrl = Field(..., description="Biforch Core service URL")
+      53	    AGENT_URL: AnyHttpUrl = Field(...,
+      54	                                  description="This agent's callback/API URL")
+      55	
+      56	    # Reverse proxy network settings
+      57	    REVERSE_PROXY_IP: str = Field(...,
+      58	                                  description="IP address for reverse proxy to bind")
+      59	    REVERSE_PROXY_PORTS: List[int] = Field(
+      60	        default_factory=list,
+      61	        description="Ports exposed by reverse proxy, as a list or comma-separated string"
+      62	    )
+      63	
+      64	    # Identification
+      65	    AGENT_NAME: str = Field(...,
+      66	                            description="Logical name of the reverse proxy agent")
+      67	    CALLBACK_PATH: str = Field(
+      68	        "/registrations", description="Endpoint path for Core callback"
+      69	    )
+      70	
+      71	    # Proxy backend selection
+      72	    PROXY_BACKEND: Literal["nginx", "caddy", "traefik", "haproxy"] = Field(
+      73	        ..., description="Proxy engine type"
+      74	    )
+      75	
+      76	    # Runtime behavior
+      77	    TIMEOUT: int = Field(..., description="HTTP request timeout in seconds")
+      78	
+      79	    # Server settings
+      80	    INTERNAL_HOST: str = Field(
+      81	        "0.0.0.0", description="Uvicorn bind host"
+      82	    )
+      83	    INTERNAL_PORT: int = Field(
+      84	        8000, description="Uvicorn bind port"
+      85	    )
+      86	    RELOAD: bool = Field(
+      87	        False, description="Enable Uvicorn auto-reload in development"
+      88	    )
+      89	
+      90	    # Logging
+      91	    LOG_FILE_PATH: Path = Field("./data/.log", description="Path to log file")
+      92	
+      93	    # Pydantic model configuration
+      94	    model_config = {
+      95	        "extra": "ignore",
+      96	        "env_file": ".env",
+      97	        "case_sensitive": True,
+      98	    }
+      99	
+     100	    # ---------------------- Validators ----------------------
+     101	    @field_validator("DB_PATH", mode="before")
+     102	    @classmethod
+     103	    def _validate_db_path(cls, v: str | Path) -> Path:
+     104	        path = Path(v)
+     105	        parent = path.parent
+     106	        if not parent.exists():
+     107	            raise ValueError(f"DB_PATH directory does not exist: {parent}")
+     108	        return path
+     109	
+     110	    @field_validator("CONFIG_DIR", mode="before")
+     111	    @classmethod
+     112	    def _validate_config_dir(cls, v: str | Path) -> Path:
+     113	        path = Path(v)
+     114	        if not path.exists():
+     115	            raise ValueError(f"CONFIG_DIR does not exist: {path}")
+     116	        if not path.is_dir():
+     117	            raise ValueError(f"CONFIG_DIR is not a directory: {path}")
+     118	        return path
+     119	
+     120	    @field_validator("REVERSE_PROXY_IP", mode="before")
+     121	    @classmethod
+     122	    def _validate_reverse_proxy_ip(cls, v: str) -> str:
+     123	        import ipaddress
+     124	        try:
+     125	            ipaddress.ip_address(v)
+     126	        except ValueError:
+     127	            raise ValueError(
+     128	                f"REVERSE_PROXY_IP must be a valid IP address: {v}")
+     129	        return v
+     130	
+     131	    @field_validator("REVERSE_PROXY_PORTS", mode="before")
+     132	    @classmethod
+     133	    def _validate_reverse_proxy_ports(cls, v: List[int] | str) -> List[int]:
+     134	        # Accept comma-separated string or list
+     135	        ports: List[int] = []
+     136	        if isinstance(v, str):
+     137	            parts = [p.strip() for p in v.split(",") if p.strip()]
+     138	            for p in parts:
+     139	                try:
+     140	                    num = int(p)
+     141	                except ValueError:
+     142	                    raise ValueError(f"Invalid port value: {p}")
+     143	                ports.append(num)
+     144	        else:
+     145	            ports = v
+     146	        for p in ports:
+     147	            if not (1 <= p <= 65535):
+     148	                raise ValueError(f"Port must be between 1 and 65535: {p}")
+     149	        return ports
+     150	
+     151	    @field_validator("TIMEOUT", mode="before")
+     152	    @classmethod
+     153	    def _validate_timeout(cls, v: int | str) -> int:
+     154	        try:
+     155	            n = int(v)
+     156	        except Exception:
+     157	            raise ValueError("TIMEOUT must be an integer")
+     158	        if n <= 0:
+     159	            raise ValueError("TIMEOUT must be positive")
+     160	        return n
+     161	
+     162	    @field_validator("INTERNAL_HOST", mode="before")
+     163	    @classmethod
+     164	    def _validate_host(cls, v: str) -> str:
+     165	        import ipaddress
+     166	        try:
+     167	            ipaddress.ip_address(v)
+     168	        except ValueError:
+     169	            raise ValueError(f"INTERNAL_HOST must be a valid IP address: {v}")
+     170	        return v
+     171	
+     172	    @field_validator("INTERNAL_PORT", mode="before")
+     173	    @classmethod
+     174	    def _validate_port(cls, v: int | str) -> int:
+     175	        try:
+     176	            port = int(v)
+     177	        except Exception:
+     178	            raise ValueError("INTERNAL_PORT must be an integer")
+     179	        if not (1 <= port <= 65535):
+     180	            raise ValueError("INTERNAL_PORT must be between 1 and 65535")
+     181	        return port
+     182	
+     183	    @field_validator("RELOAD", mode="before")
+     184	    @classmethod
+     185	    def _validate_reload(cls, v: bool | str) -> bool:
+     186	        if isinstance(v, str):
+     187	            val = v.lower()
+     188	            if val in ("true", "1", "yes"):
+     189	                return True
+     190	            if val in ("false", "0", "no"):
+     191	                return False
+     192	            raise ValueError("RELOAD must be a boolean (true/false)")
+     193	        return bool(v)
+     194	
+     195	
+     196	LOGGING_CONFIG: dict = {
+     197	    "version": 1,
+     198	    "disable_existing_loggers": False,
+     199	
+     200	    "formatters": {
+     201	        "standard": {
+     202	            "format": "%(asctime)s,%(msecs)03d [%(levelname)s] %(filename)s: %(message)s",
+     203	            "datefmt": "%Y-%m-%d %H:%M:%S",
+     204	        },
+     205	        "colored": {
+     206	            "()": "uvicorn.logging.DefaultFormatter",
+     207	            "fmt": "%(levelprefix)s [%(filename)s:%(lineno)d] [%(asctime)s] %(message)s",
+     208	            "datefmt": "%H:%M:%S",
+     209	            "use_colors": True,
+     210	        },
+     211	    },
+     212	
+     213	    "handlers": {
+     214	        "file": {
+     215	            "class": "logging.FileHandler",
+     216	            "level": "INFO",
+     217	            "formatter": "standard",
+     218	            "filename": ".log",
+     219	            "mode": "a",
+     220	        },
+     221	        "console": {
+     222	            "class": "logging.StreamHandler",
+     223	            "level": "DEBUG",
+     224	            "formatter": "colored",
+     225	            "stream": "ext://sys.stdout",
+     226	        },
+     227	    },
+     228	
+     229	    "loggers": {
+     230	        "": {
+     231	            "handlers": ["console", "file"],
+     232	            "level": "INFO",
+     233	            "propagate": False,
+     234	        },
+     235	    },
+     236	}
+     237	
+     238	
+     239	# Instantiate settings (fails on validation error)
+     240	try:
+     241	    settings = Settings()
+     242	    LOGGING_CONFIG["handlers"]["file"]["filename"] = settings.LOG_FILE_PATH
+     243	    logging.config.dictConfig(LOGGING_CONFIG)
+     244	    logging.info("Settings loaded successfully")
+     245	except ValidationError as exc:
+     246	    logging.error("🚨 Configuration error:\n", exc, file=sys.stderr)
+     247	    sys.exit(1)
+     248	
+     249	
+     250	if __name__ == "__main__":
+     251	    settings_json = settings.model_dump_json(indent=2)
+     252	    logging.info(f"{settings_json}")
+
+------------------------------ reverse_proxy_agent/database.py ------------------------------
+       1	"""Database bootstrap (engine / session / Base)."""
+       2	from sqlalchemy import create_engine
+       3	from sqlalchemy.orm import declarative_base, sessionmaker
+       4	from .config import settings
+       5	
+       6	DATABASE_URL = f"sqlite:///{settings.DB_PATH}"
+       7	engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+       8	
+       9	# Session factory
+      10	SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+      11	
+      12	# Declarative base class
+      13	Base = declarative_base()
+
+------------------------------ reverse_proxy_agent/dependencies.py ------------------------------
+       1	"""Reusable FastAPI dependency utilities.
+       2	
+       3	This module centralises *injection* helpers so that other parts of the
+       4	application only need `Depends(get_db)` / `Depends(get_backend)` /
+       5	`Depends(get_core_client)`.
+       6	"""
+       7	from __future__ import annotations
+       8	
+       9	from typing import Generator
+      10	
+      11	from sqlalchemy.orm import Session
+      12	
+      13	from .database import SessionLocal
+      14	from .backends import backend as _backend
+      15	from .backends.base import ProxyBackend
+      16	from .clients.core import CoreClient
+      17	from .config import settings
+      18	from .models import AgentCredentials
+      19	
+      20	# ---------------------------------------------------------------------------
+      21	# Database session dependency
+      22	# ---------------------------------------------------------------------------
+      23	
+      24	
+      25	def get_db() -> Generator[Session, None, None]:
+      26	    """Yield a *request-scoped* SQLAlchemy session.
+      27	
+      28	    The explicit ``Generator`` return annotation keeps type-checkers such as
+      29	    *pylance* & *mypy* happy, and is what FastAPI expects
+      30	    for yield-based dependencies.
+      31	    """
+      32	    db = SessionLocal()
+      33	    try:
+      34	        yield db
+      35	    finally:
+      36	        db.close()
+      37	
+      38	
+      39	# ---------------------------------------------------------------------------
+      40	# Reverse-proxy backend dependency
+      41	# ---------------------------------------------------------------------------
+      42	
+      43	def get_backend() -> ProxyBackend:  # pragma: no cover – trivial wrapper
+      44	    """Return the singleton *backend* selected in settings (Nginx, Caddy …)."""
+      45	    return _backend
+      46	
+      47	
+      48	# ---------------------------------------------------------------------------
+      49	# Core service client dependency
+      50	# ---------------------------------------------------------------------------
+      51	
+      52	def get_core_client(db: Session) -> CoreClient:
+      53	    """
+      54	    Create a CoreClient using the stored actor token from the database.
+      55	    Raises HTTPException if no token is available.
+      56	    """
+      57	    from fastapi import HTTPException
+      58	
+      59	    # Retrieve the agent's credentials from the local database
+      60	    cred = db.query(AgentCredentials).first()
+      61	    token = cred.token if cred else None
+      62	
+      63	    if not token:
+      64	        raise HTTPException(
+      65	            status_code=500, detail="Missing actor token: please register the agent first.")
+      66	
+      67	    # Initialize CoreClient with actor_token
+      68	    return CoreClient(str(settings.CORE_URL), actor_token=token)
+
+------------------------------ reverse_proxy_agent/__init__.py ------------------------------
+       1	# reverse_proxy_agent/__init__.py
+       2	from .api import app
+       3	
+       4	__all__ = ["app"]
+
+------------------------------ reverse_proxy_agent/models.py ------------------------------
+       1	"""SQLAlchemy ORM models."""
+       2	from sqlalchemy import Column, Integer, String, DateTime, func
+       3	from .database import Base, engine
+       4	
+       5	class RuleDB(Base):
+       6	    __tablename__ = "rules"
+       7	    id = Column(Integer, primary_key=True, index=True)
+       8	    service_name = Column(String, nullable=False, index=True)
+       9	    action = Column(String, nullable=False)
+      10	    ip = Column(String, nullable=False)
+      11	
+      12	class ServiceDB(Base):
+      13	    __tablename__ = "services"
+      14	    id = Column(Integer, primary_key=True, index=True)
+      15	    name = Column(String, nullable=False, unique=True)
+      16	    core_service_id = Column(Integer, nullable=False, unique=True)
+      17	
+      18	class AgentCredentials(Base):
+      19	    __tablename__ = "agent_credentials"
+      20	
+      21	    uuid = Column(String(36), primary_key=True, index=True)
+      22	    token = Column(String, nullable=False)
+      23	
+      24	    created_at = Column(
+      25	        DateTime(timezone=True),
+      26	        server_default=func.now(),
+      27	        nullable=False,
+      28	    )
+      29	    updated_at = Column(
+      30	        DateTime(timezone=True),
+      31	        server_default=func.now(),
+      32	        onupdate=func.now(),
+      33	        nullable=False,
+      34	    )
+      35	
+      36	
+      37	# Auto-create tables
+      38	Base.metadata.create_all(bind=engine)
+
+------------------------------ reverse_proxy_agent/schemas.py ------------------------------
+       1	"""Pydantic request / response models shared by the API."""
+       2	from pydantic import BaseModel, field_validator, IPvAnyNetwork
+       3	
+       4	
+       5	class RuleIn(BaseModel):
+       6	    action: str  # "pass" | "deny"
+       7	    ip: IPvAnyNetwork
+       8	
+       9	    @field_validator("action")
+      10	    @classmethod
+      11	    def _validate_action(cls, v: str) -> str:
+      12	        if v not in {"pass", "deny"}:  # mirror Core’s contract
+      13	            raise ValueError("action must be 'pass' or 'deny'")
+      14	        return v
+      15	
+      16	
+      17	class RuleOut(BaseModel):
+      18	    id: int
+      19	    service_id: int
+      20	    action: str
+      21	    ip: str
+
+------------------------------ reverse_proxy_agent/services/sync.py ------------------------------
+       1	from __future__ import annotations
+       2	
+       3	import logging
+       4	from typing import Dict, List
+       5	
+       6	from sqlalchemy.orm import Session
+       7	
+       8	from ..clients import core
+       9	from ..models import AgentCredentials, RuleDB, ServiceDB
+      10	from ..backends import backend
+      11	from ..dependencies import get_core_client
+      12	
+      13	
+      14	# ------------------------- helper: collect rules --------------------------
+      15	
+      16	def _collect_rules(db: Session) -> Dict[str, List[str]]:
+      17	    """
+      18	    Collects rules from the database and groups them by service name.
+      19	
+      20	    Args:
+      21	        db (Session): The SQLAlchemy session.
+      22	
+      23	    Returns:
+      24	        Dict[str, List[str]]: A dictionary where the key is the service name
+      25	                              and the value is a list of rule strings.
+      26	    """
+      27	    grouped: Dict[str, List[str]] = {}
+      28	    rows: List[RuleDB] = db.query(RuleDB).all()
+      29	    for r in rows:
+      30	        action: str = "allow" if r.action == "pass" else "deny"
+      31	        grouped.setdefault(r.service_name, []).append(f"{action} {r.ip};")
+      32	    return grouped
+      33	
+      34	
+      35	# ------------------------------- public API -------------------------------
+      36	
+      37	def sync_to_backend(db: Session) -> None:
+      38	    """
+      39	    Synchronizes rules from the database to the backend.
+      40	
+      41	    Args:
+      42	        db (Session): The SQLAlchemy session.
+      43	    """
+      44	    backend.apply_rules(_collect_rules(db))
+      45	
+      46	
+      47	def announce_new_service(svc_name: str, db: Session) -> None:
+      48	    """
+      49	    Registers a new service with the Core if it is not already registered.
+      50	
+      51	    Args:
+      52	        svc_name (str): The name of the service to register.
+      53	        db (Session): The SQLAlchemy session.
+      54	    """
+      55	    core: core.CoreClient = get_core_client(db)
+      56	    try:
+      57	        svc: ServiceDB | None = db.query(ServiceDB).filter_by(name=svc_name).first()
+      58	        if svc:
+      59	            return  # already known
+      60	        agent: AgentCredentials | None = db.query(AgentCredentials).first()
+      61	        if not agent:
+      62	            logging.warning("No agent credentials found!")
+      63	            return
+      64	
+      65	        resp: core.Service = core.create_service(
+      66	            svc_name, reverse_proxy_uuid=str(agent.uuid))
+      67	        
+      68	        # Register the service in the local database
+      69	        new_service = ServiceDB(id=resp.id, name=svc_name, core_service_id=resp.id)
+      70	        db.add(new_service)
+      71	        db.commit()
+      72	
+      73	        logging.info("📣 Registered service '%s' with Core (id=%s)",
+      74	                     svc_name, resp.id)
+      75	    except Exception as exc:  # noqa: BLE001
+      76	        logging.warning("Failed to register service %s: %s", svc_name, exc)
+      77	    finally:
+      78	        db.close()
+
+------------------------------ test.py ------------------------------
+       1	import logging
+       2	import logging.config
+       3	import sys
+       4	# from uvicorn.logging import DefaultFormatter
+       5	
+       6	LOG_FILE_PATH = ".log"
+       7	
+       8	LOGGING_CONFIG: dict = {
+       9	    "version": 1,
+      10	    "disable_existing_loggers": False,
+      11	
+      12	    "formatters": {
+      13	        # 檔案用的標準 formatter
+      14	        "standard": {
+      15	            "format": "%(asctime)s,%(msecs)03d [%(levelname)s] %(filename)s: %(message)s",
+      16	            "datefmt": "%Y-%m-%d %H:%M:%S",
+      17	        },
+      18	        # console 用的彩色 formatter
+      19	        "colored": {
+      20	            "()": "uvicorn.logging.DefaultFormatter",
+      21	            "fmt": "%(levelprefix)s%(filename)s:%(lineno)d [%(asctime)s] %(message)s",
+      22	            "datefmt": "%H:%M:%S",
+      23	            "use_colors": True,
+      24	        },
+      25	    },
+      26	
+      27	    "handlers": {
+      28	        "file": {
+      29	            "class": "logging.FileHandler",
+      30	            "level": "INFO",
+      31	            "formatter": "standard",    # 指向 formatters.standard
+      32	            "filename": LOG_FILE_PATH,
+      33	            "mode": "a",
+      34	        },
+      35	        "console": {
+      36	            "class": "logging.StreamHandler",
+      37	            "level": "DEBUG",
+      38	            "formatter": "colored",     # 指向 formatters.colored
+      39	            "stream": "ext://sys.stdout",
+      40	        },
+      41	    },
+      42	
+      43	    "loggers": {
+      44	        "": {  # root logger
+      45	            "handlers": ["console", "file"],
+      46	            "level": "INFO",
+      47	            "propagate": False,
+      48	        },
+      49	    },
+      50	}
+      51	
+      52	logging.config.dictConfig(LOGGING_CONFIG)
+      53	
+      54	logger = logging.getLogger(__name__)
+      55	
+      56	logging.debug("這是 DEBUG")
+      57	logging.info("這是 INFO")
+      58	logging.warning("這是 WARNING")
+      59	logging.error("這是 ERROR")
+
+------------------------------ tests/conftest.py ------------------------------
+       1	# tests/conftest.py
+       2	import pytest
+       3	from fastapi.testclient import TestClient
+       4	from sqlalchemy import create_engine
+       5	from sqlalchemy.orm import sessionmaker
+       6	from reverse_proxy_agent.database import Base
+       7	from reverse_proxy_agent.api import app
+       8	from reverse_proxy_agent.dependencies import get_db as original_get_db
+       9	
+      10	@pytest.fixture(scope="session")
+      11	def test_engine(tmp_path_factory):
+      12	    """Create a new SQLite engine for testing."""
+      13	    db_file = tmp_path_factory.mktemp("data") / "test.db"
+      14	    engine = create_engine(
+      15	        f"sqlite:///{db_file}", connect_args={"check_same_thread": False}
+      16	    )
+      17	    Base.metadata.create_all(bind=engine)
+      18	    return engine
+      19	
+      20	@pytest.fixture(autouse=True)
+      21	def clean_db(test_engine):
+      22	    """Drop and recreate all tables before each test to avoid unique-constraint conflicts."""
+      23	    Base.metadata.drop_all(bind=test_engine)
+      24	    Base.metadata.create_all(bind=test_engine)
+      25	
+      26	@pytest.fixture()
+      27	def db_session(test_engine):
+      28	    """Provide a SQLAlchemy session bound to the test engine."""
+      29	    SessionLocal = sessionmaker(
+      30	        bind=test_engine, autocommit=False, autoflush=False
+      31	    )
+      32	    session = SessionLocal()
+      33	    yield session
+      34	    session.close()
+      35	
+      36	@pytest.fixture()
+      37	def client(db_session):
+      38	    """Create a TestClient that uses the db_session via dependency override."""
+      39	    def _override_get_db():
+      40	        yield db_session
+      41	    app.dependency_overrides[original_get_db] = _override_get_db
+      42	    return TestClient(app)
+
+------------------------------ tests/test_api_invalid_inputs.py ------------------------------
+       1	import pytest
+       2	from reverse_proxy_agent.models import ServiceDB
+       3	
+       4	INVALID_INPUTS = [
+       5	    ("/rules/1", "post", {"action": "drop", "ip": "10.0.0.1"}, 'action'),
+       6	    ("/rules/1", "post", {"action": "pass", "ip": "bad-ip"}, 'ip'),
+       7	    ("/rules/2", "put",  {"action": "xxx", "ip": "1.1.1.1"}, 'action'),
+       8	    ("/rules/2", "put",  {"action": "deny", "ip": "not-an-ip"}, 'ip'),
+       9	]
+      10	
+      11	@pytest.mark.parametrize("path,method,payload,err_field", INVALID_INPUTS)
+      12	def test_invalid_payloads(client, db_session, path, method, payload, err_field):
+      13	    """Parametrized test for invalid action/ip payloads."""
+      14	    # Ensure service exists for validation
+      15	    db_session.add(ServiceDB(id=1, name="svc", core_service_id=1))
+      16	    db_session.commit()
+      17	
+      18	    resp = getattr(client, method)(path, json=payload)
+      19	    assert resp.status_code == 422
+      20	    errors = resp.json()["detail"]
+      21	    assert any(err['loc'][-1] == err_field for err in errors)
+
+------------------------------ tests/test_api.py ------------------------------
+       1	import pytest
+       2	from fastapi.testclient import TestClient
+       3	from reverse_proxy_agent.models import ServiceDB, RuleDB
+       4	
+       5	
+       6	def test_full_rule_lifecycle(client, db_session):
+       7	    """Black‑box test: create, replace, and delete rules via HTTP endpoints."""
+       8	    # Register service
+       9	    svc = ServiceDB(id=5, name="my_svc", core_service_id=50)
+      10	    db_session.add(svc)
+      11	    db_session.commit()
+      12	
+      13	    # 1) Create a rule
+      14	    resp1 = client.post("/rules/5", json={"action": "deny", "ip": "8.8.8.8"})
+      15	    assert resp1.status_code == 200
+      16	    data1 = resp1.json()
+      17	    assert data1["action"] == "deny"
+      18	    assert data1["service_id"] == 5
+      19	    assert data1["ip"] == "8.8.8.8/32"  # Pydantic normalization
+      20	
+      21	    # 2) Replace rules
+      22	    resp2 = client.put("/rules/5", json={"action": "pass", "ip": "1.2.3.0/24"})
+      23	    assert resp2.status_code == 200
+      24	    data2 = resp2.json()
+      25	    assert isinstance(data2, list) and len(data2) == 1
+      26	    assert data2[0]["action"] == "pass"
+      27	    assert data2[0]["ip"] == "1.2.3.0/24"
+      28	
+      29	    # 3) Delete rules
+      30	    resp3 = client.delete("/rules/5")
+      31	    assert resp3.status_code == 200
+      32	    assert resp3.json() == {"deleted": 1}
+
+------------------------------ tests/test_core_client.py ------------------------------
+       1	import pytest
+       2	import requests
+       3	from reverse_proxy_agent.clients.core import CoreClient
+       4	
+       5	class DummyResponse:
+       6	    def __init__(self, status_code, json_data=None, text=''):
+       7	        self.status_code = status_code
+       8	        self._json = json_data or {}
+       9	        self.text = text
+      10	    def raise_for_status(self):
+      11	        if self.status_code >= 400:
+      12	            raise requests.HTTPError(self.text)
+      13	    def json(self):
+      14	        return self._json
+      15	
+      16	@pytest.fixture(autouse=True)
+      17	def patch_requests(monkeypatch):
+      18	    class FakeSession:
+      19	        def post(self, *args, **kwargs):
+      20	            return DummyResponse(200, json_data={"id": 123})
+      21	        def delete(self, *args, **kwargs):
+      22	            return DummyResponse(204)
+      23	    monkeypatch.setattr("requests.post", FakeSession().post)
+      24	    monkeypatch.setattr("requests.delete", FakeSession().delete)
+      25	
+      26	def test_create_and_delete_service():
+      27	    client = CoreClient()
+      28	    resp = client.create_service("svc", "uuid")
+      29	    assert resp["id"] == 123
+      30	    # delete
+      31	    client.delete_service(123)
+
+------------------------------ tests/test_lifespan.py ------------------------------
+       1	# tests/test_lifespan.py
+       2	from fastapi.testclient import TestClient
+       3	import pytest
+       4	from pathlib import Path
+       5	from reverse_proxy_agent.api import app
+       6	from reverse_proxy_agent.config import settings
+       7	
+       8	def test_lifespan_discovery_triggers_announce(monkeypatch, tmp_path):
+       9	    """Startup lifespan should announce services for existing .conf files."""
+      10	    calls = []
+      11	    # Patch announce function so we don't actually hit Core
+      12	    monkeypatch.setattr(
+      13	        'reverse_proxy_agent.api.announce_new_service',
+      14	        lambda svc: calls.append(svc)
+      15	    )
+      16	
+      17	    # Prepare a temp CONFIG_DIR with a dummy .conf
+      18	    config_dir = tmp_path / 'cfg'
+      19	    config_dir.mkdir()
+      20	
+      21	    # Override the already-loaded settings.CONFIG_DIR to our temp dir
+      22	    monkeypatch.setattr(settings, "CONFIG_DIR", config_dir)
+      23	
+      24	    # Create a test snippet
+      25	    (config_dir / 'demo_service.conf').write_text('')
+      26	
+      27	    # Trigger app startup (invokes lifespan)
+      28	    with TestClient(app):
+      29	        pass
+      30	
+      31	    assert 'demo_service' in calls
+
+------------------------------ tests/test_nginx_backend.py ------------------------------
+       1	import subprocess
+       2	import tempfile
+       3	
+       4	import pytest
+       5	from reverse_proxy_agent.backends.nginx import NginxBackend
+       6	
+       7	
+       8	def test_apply_and_reload_with_sudo(monkeypatch, tmp_path):
+       9	    # Prepare a temp config dir
+      10	    config_dir = tmp_path / "conf"
+      11	    config_dir.mkdir()
+      12	    backend = NginxBackend(config_dir)
+      13	    rules = {"svc1": ["allow 1.2.3.4;", "deny 5.6.7.8;"]}
+      14	
+      15	    # Stub subprocess.run to capture sudo command
+      16	    calls = {}
+      17	    def fake_run(cmd, check=True):
+      18	        calls['cmd'] = cmd
+      19	        return None
+      20	    monkeypatch.setattr(subprocess, "run", fake_run)
+      21	
+      22	    # Apply rules should write file and call sudo nginx reload
+      23	    backend.apply_rules(rules)
+      24	
+      25	    # Verify conf file content
+      26	    conf_file = config_dir / "svc1.conf"
+      27	    content = conf_file.read_text()
+      28	    assert "allow 1.2.3.4;" in content
+      29	    assert "deny 5.6.7.8;" in content
+      30	
+      31	    # Verify that reload was invoked via sudo
+      32	    assert calls['cmd'][0] == 'sudo'
+      33	    assert 'nginx' in calls['cmd']
+      34	    assert '-s' in calls['cmd'] and 'reload' in calls['cmd']
+
+------------------------------ tests/test_schemas.py ------------------------------
+       1	import pytest
+       2	from pydantic import ValidationError
+       3	from reverse_proxy_agent.schemas import RuleIn
+       4	
+       5	
+       6	def test_rulein_validation_valid_and_invalid():
+       7	    # valid case
+       8	    valid = RuleIn(action='pass', ip='10.0.0.0/24')
+       9	    assert valid.action == 'pass'
+      10	
+      11	    # invalid action
+      12	    with pytest.raises(ValidationError):
+      13	        RuleIn(action='drop', ip='10.0.0.1')
+
+------------------------------ tests/test_service_sync.py ------------------------------
+       1	# tests/test_services_sync.py
+       2	
+       3	import pytest
+       4	from sqlalchemy.orm import Session
+       5	
+       6	from reverse_proxy_agent.services.sync import announce_new_service, get_db
+       7	from reverse_proxy_agent.models import ServiceDB
+       8	from reverse_proxy_agent.database import engine, Base
+       9	from reverse_proxy_agent.config import settings
+      10	
+      11	@pytest.fixture(autouse=True)
+      12	def clear_database():
+      13	    """
+      14	    Drop and recreate all tables before each test to avoid unique-constraint conflicts.
+      15	    """
+      16	    Base.metadata.drop_all(bind=engine)
+      17	    Base.metadata.create_all(bind=engine)
+      18	    yield
+      19	
+      20	class DummyCoreClient:
+      21	    """
+      22	    Dummy CoreClient to capture create_service calls without making real HTTP requests.
+      23	    """
+      24	    def __init__(self):
+      25	        self.calls = []
+      26	
+      27	    def create_service(self, service: str, reverse_proxy_uuid: str):
+      28	        """
+      29	        Record the call arguments and return a fixed id.
+      30	        """
+      31	        self.calls.append((service, reverse_proxy_uuid))
+      32	        return {"id": 42}
+      33	
+      34	def test_announce_new_service_registers_and_saves(monkeypatch):
+      35	    """
+      36	    announce_new_service on first call should invoke CoreClient.create_service
+      37	    and insert a new ServiceDB record with the returned id.
+      38	    """
+      39	    dummy_client = DummyCoreClient()
+      40	    # Patch get_core_client in the sync module to return our dummy_client
+      41	    monkeypatch.setattr(
+      42	        'reverse_proxy_agent.services.sync.get_core_client',
+      43	        lambda: dummy_client
+      44	    )
+      45	
+      46	    # Call the function under test
+      47	    announce_new_service('foo_service')
+      48	
+      49	    # 1) CoreClient.create_service should have been called once
+      50	    assert dummy_client.calls == [
+      51	        ('foo_service', str(settings.BIFORCH_UUID))
+      52	    ]
+      53	
+      54	    # 2) A new ServiceDB entry should exist in the local database
+      55	    db: Session = next(get_db())
+      56	    service_entry = db.query(ServiceDB).filter_by(name='foo_service').one_or_none()
+      57	    assert service_entry is not None
+      58	    assert service_entry.id == 42
+      59	    assert service_entry.core_service_id == 42
+      60	    db.close()
+      61	
+      62	def test_announce_new_service_does_nothing_if_already_registered(monkeypatch):
+      63	    """
+      64	    If a ServiceDB entry with the same name already exists,
+      65	    announce_new_service should not call CoreClient.create_service again.
+      66	    """
+      67	    # Pre-insert a ServiceDB record with name 'bar_service'
+      68	    db: Session = next(get_db())
+      69	    db.add(ServiceDB(id=99, name='bar_service', core_service_id=99))
+      70	    db.commit()
+      71	    db.close()
+      72	
+      73	    dummy_client = DummyCoreClient()
+      74	    monkeypatch.setattr(
+      75	        'reverse_proxy_agent.services.sync.get_core_client',
+      76	        lambda: dummy_client
+      77	    )
+      78	
+      79	    # Call announce_new_service again with the same service name
+      80	    announce_new_service('bar_service')
+      81	
+      82	    # Since the service was already registered, create_service should not be called
+      83	    assert dummy_client.calls == []
+
+------------------------------ tests/test_utils.py ------------------------------
+       1	import pytest
+       2	from reverse_proxy_agent.utils import _collect_rules, sync_all_rules
+       3	from reverse_proxy_agent.database import SessionLocal, Base, engine
+       4	from reverse_proxy_agent.models import RuleDB, ServiceDB
+       5	
+       6	@pytest.fixture(autouse=True)
+       7	def clean_db():
+       8	    # setup fresh DB
+       9	    Base.metadata.drop_all(bind=engine)
+      10	    Base.metadata.create_all(bind=engine)
+      11	    yield
+      12	
+      13	def test_collect_empty():
+      14	    grouped = _collect_rules()
+      15	    assert grouped == {}
+      16	
+      17	def test_collect_and_sync(monkeypatch):
+      18	    # insert via ORM
+      19	    session = SessionLocal()
+      20	    session.add(ServiceDB(id=1, name="svc", core_service_id=1))
+      21	    session.add(RuleDB(id=1, service_name="svc", action="pass", ip="1.2.3.4"))
+      22	    session.commit()
+      23	    session.close()
+      24	
+      25	    # stub backend.apply_rules
+      26	    calls = {}
+      27	    class StubBackend:
+      28	        def apply_rules(self, rules):
+      29	            calls['rules'] = rules
+      30	        def reload(self): pass
+      31	
+      32	    monkeypatch.setattr("reverse_proxy_agent.utils.backend", StubBackend())
+      33	    sync_all_rules()
+      34	    assert 'svc' in calls['rules']
+
+============================== DONE ==============================
