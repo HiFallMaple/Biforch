@@ -1,7 +1,11 @@
 ============================== PROJECT TREE ==============================
 .
-├── biforch_core
+├── core
 │   ├── api.py
+│   ├── clients
+│   │   ├── factory.py
+│   │   ├── firewall_agent.py
+│   │   └── reverse_proxy_agent.py
 │   ├── cli.py
 │   ├── config.py
 │   ├── database.py
@@ -10,242 +14,576 @@
 │   ├── models.py
 │   ├── schemas.py
 │   └── services.py
-├── core.py
 ├── data
+├── docker-compose.dev.yml
+├── docker-compose.prod.yml
+├── Dockerfile.dev
+├── Dockerfile.prod
+├── entrypoint.sh
 ├── .env
 ├── pyproject.toml
 └── README.md
 
-3 directories, 13 files
+4 directories, 20 files
 
 ============================ FILE CONTENTS ==============================
------------------------------- biforch_core/api.py ------------------------------
-       1	from fastapi import FastAPI, Depends, Body, Request, HTTPException
-       2	from typing import List, Literal
-       3	from .dependencies import get_db, get_current_actor, ActorRole
-       4	from .schemas import (
-       5	    FirewallIn,
-       6	    ReverseProxyIn,
-       7	    ServiceDiscoveryIn,
-       8	    ServiceIn, ServiceOut,
-       9	    RuleIn, RuleOut,
-      10	    PendingRequestOut, PendingOut, PendingApproveOut
-      11	)
-      12	from .models import PendingRegistrationDB, PendingType, FirewallDB, ReverseProxyDB, RuleDB, ServiceDB
-      13	from .services import enqueue_registration, approve_registration
-      14	
-      15	app = FastAPI(title="Biforch Core")
-      16	
-      17	# ---------------------- Registration endpoints ----------------------
-      18	
+------------------------------ core/api.py ------------------------------
+       1	from fastapi import FastAPI, Depends, Request, HTTPException
+       2	from typing import List
+       3	
+       4	
+       5	from .clients.factory import get_firewall_agent_client
+       6	from .config import logging
+       7	from .dependencies import get_db, get_current_actor, ActorRole
+       8	from .schemas import (
+       9	    FirewallIn,
+      10	    PendingApproveIn,
+      11	    ReverseProxyIn,
+      12	    ServiceDiscoveryIn,
+      13	    ServiceIn, ServiceOut,
+      14	    RuleIn, RuleOut,
+      15	    PendingRequestOut, PendingOut, PendingApproveOut
+      16	)
+      17	from .models import PendingRegistrationDB, PendingType, FirewallDB, ReverseProxyDB, RuleDB, ServiceDB
+      18	from .services import enqueue_registration, approve_registration
       19	
-      20	@app.post(
-      21	    "/firewall", response_model=PendingRequestOut
-      22	)
-      23	async def create_firewall(
-      24	    body: FirewallIn,
-      25	    request: Request,
-      26	    db=Depends(get_db),
-      27	):
-      28	    req_id, secret = enqueue_registration(
-      29	        PendingType.FIREWALL, body, request, db
-      30	    )
-      31	    return PendingRequestOut(request_id=req_id, secret=secret)
-      32	
-      33	
-      34	@app.post(
-      35	    "/reverse_proxy", response_model=PendingRequestOut
-      36	)
-      37	async def create_reverse_proxy(
-      38	    body: ReverseProxyIn,
-      39	    request: Request,
-      40	    db=Depends(get_db),
-      41	):
-      42	    req_id, secret = enqueue_registration(
-      43	        PendingType.REVERSE_PROXY, body, request, db
-      44	    )
-      45	    return PendingRequestOut(request_id=req_id, secret=secret)
-      46	
-      47	
-      48	@app.post(
-      49	    "/service_discovery", response_model=PendingRequestOut
-      50	)
-      51	async def create_service_discovery(
-      52	    body: ServiceDiscoveryIn,
-      53	    request: Request,
-      54	    db=Depends(get_db),
-      55	):
-      56	    req_id, secret = enqueue_registration(
-      57	        PendingType.SERVICE_DISCOVERY, body, request, db
-      58	    )
-      59	    return PendingRequestOut(request_id=req_id, secret=secret)
-      60	
-      61	# ------------------------- Admin endpoints --------------------------
-      62	
-      63	
-      64	@app.get(
-      65	    "/pending_registrations",
-      66	    response_model=List[PendingOut],
-      67	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))]
-      68	)
-      69	def list_pending(
-      70	    db=Depends(get_db)
-      71	) -> List[PendingOut]:
-      72	    return db.query(PendingRegistrationDB)\
-      73	        .order_by(PendingRegistrationDB.created_at)\
-      74	        .all()
-      75	
-      76	
-      77	@app.patch(
-      78	    "/pending_registrations/{req_id}",
-      79	    response_model=PendingApproveOut,
-      80	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))]
-      81	)
-      82	def patch_pending(
-      83	    req_id: int,
-      84	    action: Literal["approve", "reject"] = Body(...),
-      85	    db=Depends(get_db),
-      86	) -> PendingApproveOut:
-      87	    status, entity_id = approve_registration(req_id, action, db)
-      88	    return PendingApproveOut(
-      89	        id=req_id,
-      90	        status=status,
-      91	        entity_id=entity_id,
-      92	    )
-      93	
-      94	# ------------------------- Service endpoints -------------------------
-      95	
-      96	
-      97	@app.post(
-      98	    "/service", response_model=ServiceOut
-      99	)
-     100	def create_service(
-     101	    body: ServiceIn,
-     102	    caller=Depends(get_current_actor([
-     103	        ActorRole.REVERSE_PROXY, ActorRole.SERVICE_DISCOVERY
-     104	    ])),
-     105	    db=Depends(get_db),
-     106	) -> ServiceOut:
-     107	    # verify reverse-proxy exists
-     108	    rp = db.query(ReverseProxyDB).filter_by(
-     109	        uuid=body.reverse_proxy_uuid
-     110	    ).first()
-     111	    if not rp:
-     112	        raise HTTPException(404, "reverse-proxy not found")
-     113	    # authorization
-     114	    if hasattr(caller, 'uuid') and caller.uuid != body.reverse_proxy_uuid:
-     115	        raise HTTPException(403, "token does not match reverse-proxy")
-     116	    # create service
-     117	    if db.query(ServiceDB).filter_by(name=body.service).first():
-     118	        raise HTTPException(400, "service already exists")
-     119	    svc = ServiceDB(
-     120	        name=body.service,
-     121	        reverse_proxy_uuid=body.reverse_proxy_uuid,
-     122	    )
-     123	    db.add(svc)
-     124	    db.commit()
-     125	    db.refresh(svc)
-     126	    return ServiceOut(id=svc.id)
-     127	
-     128	
-     129	@app.delete(
-     130	    "/service/{service_id}"
-     131	)
-     132	def delete_service(
-     133	    service_id: int,
-     134	    caller=Depends(get_current_actor([ActorRole.REVERSE_PROXY])),
-     135	    db=Depends(get_db),
-     136	):
-     137	    svc = db.get(ServiceDB, service_id)
-     138	    if not svc:
-     139	        raise HTTPException(404, "service not found")
-     140	    if svc.reverse_proxy_uuid != getattr(caller, 'uuid', None):
-     141	        raise HTTPException(403, "not authorized to delete this service")
-     142	    db.delete(svc)
-     143	    db.commit()
-     144	
-     145	# -------------------------- Rule endpoints --------------------------
-     146	
-     147	
-     148	@app.post(
-     149	    "/rules", response_model=RuleOut
-     150	)
-     151	def create_rule(
-     152	    body: RuleIn,
-     153	    firewall=Depends(get_current_actor([ActorRole.FIREWALL])),
-     154	    db=Depends(get_db),
-     155	) -> RuleOut:
-     156	    # verify service exists
-     157	    from .models import ServiceDB
-     158	    svc = db.query(ServiceDB).filter_by(name=body.service).first()
-     159	    if not svc:
-     160	        raise HTTPException(404, "service not registered")
-     161	    # create rule
-     162	    rule = RuleDB(
-     163	        firewall_rule_uuid=body.firewall_rule_uuid,
-     164	        action=body.action,
-     165	        ip=body.ip,
-     166	        service_id=svc.id,
-     167	        firewall_id=firewall.id,
-     168	    )
-     169	    db.add(rule)
+      20	app = FastAPI(title="Biforch Core")
+      21	
+      22	# ---------------------- Registration endpoints ----------------------
+      23	
+      24	
+      25	@app.post(
+      26	    "/firewall", response_model=PendingRequestOut
+      27	)
+      28	async def create_firewall(
+      29	    body: FirewallIn,
+      30	    request: Request,
+      31	    db=Depends(get_db),
+      32	):
+      33	    req_id, secret = enqueue_registration(
+      34	        PendingType.FIREWALL, body, request, db
+      35	    )
+      36	    return PendingRequestOut(request_id=req_id, secret=secret)
+      37	
+      38	
+      39	@app.post(
+      40	    "/reverse_proxy", response_model=PendingRequestOut
+      41	)
+      42	async def create_reverse_proxy(
+      43	    body: ReverseProxyIn,
+      44	    request: Request,
+      45	    db=Depends(get_db),
+      46	):
+      47	    req_id, secret = enqueue_registration(
+      48	        PendingType.REVERSE_PROXY, body, request, db
+      49	    )
+      50	    return PendingRequestOut(request_id=req_id, secret=secret)
+      51	
+      52	
+      53	@app.post(
+      54	    "/service_discovery", response_model=PendingRequestOut
+      55	)
+      56	async def create_service_discovery(
+      57	    body: ServiceDiscoveryIn,
+      58	    request: Request,
+      59	    db=Depends(get_db),
+      60	):
+      61	    req_id, secret = enqueue_registration(
+      62	        PendingType.SERVICE_DISCOVERY, body, request, db
+      63	    )
+      64	    return PendingRequestOut(request_id=req_id, secret=secret)
+      65	
+      66	# ------------------------- Admin endpoints --------------------------
+      67	
+      68	
+      69	@app.get(
+      70	    "/pending_registrations",
+      71	    response_model=List[PendingOut],
+      72	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))]
+      73	)
+      74	def list_pending(
+      75	    db=Depends(get_db)
+      76	) -> List[PendingOut]:
+      77	    return db.query(PendingRegistrationDB)\
+      78	        .order_by(PendingRegistrationDB.created_at)\
+      79	        .all()
+      80	
+      81	
+      82	@app.patch(
+      83	    "/pending_registrations/{req_id}",
+      84	    response_model=PendingApproveOut,
+      85	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))]
+      86	)
+      87	def patch_pending(
+      88	    body: PendingApproveIn,
+      89	    req_id: int,
+      90	    db=Depends(get_db),
+      91	) -> PendingApproveOut:
+      92	    logging.debug("pending_registrations debug message")
+      93	    status, entity_id = approve_registration(req_id, body.action, db)
+      94	    return PendingApproveOut(
+      95	        id=req_id,
+      96	        status=status,
+      97	        entity_id=entity_id,
+      98	    )
+      99	
+     100	# ------------------------- Service endpoints -------------------------
+     101	
+     102	
+     103	@app.post("/service", response_model=ServiceOut)
+     104	def create_service(
+     105	    body: ServiceIn,
+     106	    caller=Depends(get_current_actor([ActorRole.REVERSE_PROXY, ActorRole.SERVICE_DISCOVERY])),
+     107	    db=Depends(get_db),
+     108	) -> ServiceOut:
+     109	    # 1) Verify reverse proxy exists
+     110	    proxy = db.query(ReverseProxyDB).filter_by(uuid=body.reverse_proxy_uuid).first()
+     111	    if not proxy:
+     112	        raise HTTPException(status_code=404, detail="Reverse proxy not found")
+     113	
+     114	    # 2) Authorization
+     115	    if hasattr(caller, "uuid") and caller.uuid != body.reverse_proxy_uuid:
+     116	        raise HTTPException(status_code=403, detail="Token does not match reverse proxy")
+     117	
+     118	    # 3) Ensure service name not duplicated
+     119	    if db.query(ServiceDB).filter_by(name=body.service).first():
+     120	        raise HTTPException(status_code=400, detail="Service already exists")
+     121	
+     122	    try:
+     123	        # 4) Create Service record but DO NOT commit yet
+     124	        service = ServiceDB(
+     125	            name=body.service,
+     126	            reverse_proxy_uuid=body.reverse_proxy_uuid,
+     127	        )
+     128	        db.add(service)
+     129	        db.flush()  # assign service.id within the current transaction
+     130	
+     131	        # 5) Push to all Firewall Agents
+     132	        firewalls = db.query(FirewallDB).all()
+     133	        for fw in firewalls:
+     134	            client = get_firewall_agent_client(db, fw.uuid)
+     135	            client.create_alias(
+     136	                service_name=service.name,
+     137	            )
+     138	            logging.debug(f"Pushed service '{service.name}' to firewall {fw.uuid}")
+     139	
+     140	        # 6) All pushes succeeded → commit transaction
+     141	        db.commit()
+     142	
+     143	    except Exception as exc:
+     144	        # 7) Any failure → rollback entire transaction (including ServiceDB insert)
+     145	        db.rollback()
+     146	        logging.error(f"Failed to register service on firewall: {exc}", exc_info=True)
+     147	        raise HTTPException(
+     148	            status_code=502,
+     149	            detail=f"Registration to firewall failed: {exc}"
+     150	        )
+     151	
+     152	    # 8) Return newly created Service ID
+     153	    return ServiceOut(id=service.id)
+     154	
+     155	
+     156	@app.delete(
+     157	    "/service/{service_id}"
+     158	)
+     159	def delete_service(
+     160	    service_id: int,
+     161	    caller=Depends(get_current_actor([ActorRole.REVERSE_PROXY])),
+     162	    db=Depends(get_db),
+     163	):
+     164	    svc = db.get(ServiceDB, service_id)
+     165	    if not svc:
+     166	        raise HTTPException(404, "service not found")
+     167	    if svc.reverse_proxy_uuid != getattr(caller, 'uuid', None):
+     168	        raise HTTPException(403, "not authorized to delete this service")
+     169	    db.delete(svc)
      170	    db.commit()
-     171	    db.refresh(rule)
-     172	    return RuleOut(firewall_rule_uuid=rule.firewall_rule_uuid)
+     171	
+     172	# -------------------------- Rule endpoints --------------------------
      173	
      174	
-     175	@app.delete(
-     176	    "/rules/{firewall_rule_uuid}"
+     175	@app.post(
+     176	    "/rules", response_model=RuleOut
      177	)
-     178	def delete_rule(
-     179	    firewall_rule_uuid: str,
+     178	def create_rule(
+     179	    body: RuleIn,
      180	    firewall=Depends(get_current_actor([ActorRole.FIREWALL])),
      181	    db=Depends(get_db),
-     182	):
-     183	    rule = db.query(RuleDB).filter_by(
-     184	        firewall_rule_uuid=firewall_rule_uuid,
-     185	        firewall_id=firewall.id
-     186	    ).first()
-     187	    if not rule:
-     188	        raise HTTPException(404, "rule not found or not yours")
-     189	    db.delete(rule)
-     190	    db.commit()
+     182	) -> RuleOut:
+     183	    # verify service exists
+     184	    from .models import ServiceDB
+     185	    svc = db.query(ServiceDB).filter_by(name=body.service).first()
+     186	    if not svc:
+     187	        raise HTTPException(404, "service not registered")
+     188	    # create rule
+     189	    rule = RuleDB(
+     190	        firewall_rule_id=body.firewall_rule_id,
+     191	        action=body.action,
+     192	        ip=body.src_ip,
+     193	        service_id=svc.id,
+     194	        firewall_id=firewall.id,
+     195	    )
+     196	    db.add(rule)
+     197	    db.commit()
+     198	    db.refresh(rule)
+     199	    return RuleOut(firewall_rule_id=rule.firewall_rule_id)
+     200	
+     201	
+     202	@app.delete(
+     203	    "/rules/{firewall_rule_id}"
+     204	)
+     205	def delete_rule(
+     206	    firewall_rule_id: str,
+     207	    firewall=Depends(get_current_actor([ActorRole.FIREWALL])),
+     208	    db=Depends(get_db),
+     209	):
+     210	    rule = db.query(RuleDB).filter_by(
+     211	        firewall_rule_id=firewall_rule_id,
+     212	        firewall_id=firewall.id
+     213	    ).first()
+     214	    if not rule:
+     215	        raise HTTPException(404, "rule not found or not yours")
+     216	    db.delete(rule)
+     217	    db.commit()
 
------------------------------- biforch_core/cli.py ------------------------------
+------------------------------ core/clients/factory.py ------------------------------
+       1	from typing import Dict
+       2	from sqlalchemy.orm import Session
+       3	from ..config import settings
+       4	from .firewall_agent import FirewallAgentClient
+       5	from .reverse_proxy_agent import ReverseProxyAgentClient
+       6	from ..models import FirewallDB, ReverseProxyDB
+       7	
+       8	# module-level caches for singletons
+       9	_firewall_clients: Dict[str, FirewallAgentClient] = {}
+      10	_reverse_proxy_clients: Dict[str, ReverseProxyAgentClient] = {}
+      11	
+      12	
+      13	def get_firewall_agent_client(db: Session, uuid: str) -> FirewallAgentClient:
+      14	    """
+      15	    Return a singleton FirewallAgentClient for the given uuid.
+      16	    Raises KeyError if no FirewallDB entry exists in provided session.
+      17	    """
+      18	    if uuid not in _firewall_clients:
+      19	        fw = db.query(FirewallDB).filter_by(uuid=uuid).first()
+      20	        if not fw:
+      21	            raise KeyError(f"No firewall agent found for uuid={uuid}")
+      22	        client = FirewallAgentClient(fw.api_url, timeout=settings.TIMEOUT)
+      23	        _firewall_clients[uuid] = client
+      24	    return _firewall_clients[uuid]
+      25	
+      26	
+      27	def get_reverse_proxy_agent_client(db: Session, uuid: str) -> ReverseProxyAgentClient:
+      28	    """
+      29	    Return a singleton ReverseProxyAgentClient for the given uuid.
+      30	    Raises KeyError if no ReverseProxyDB entry exists in provided session.
+      31	    """
+      32	    if uuid not in _reverse_proxy_clients:
+      33	        rp = db.query(ReverseProxyDB).filter_by(uuid=uuid).first()
+      34	        if not rp:
+      35	            raise KeyError(f"No reverse proxy agent found for uuid={uuid}")
+      36	        client = ReverseProxyAgentClient(rp.api_url, timeout=settings.TIMEOUT)
+      37	        _reverse_proxy_clients[uuid] = client
+      38	    return _reverse_proxy_clients[uuid]
+
+------------------------------ core/clients/firewall_agent.py ------------------------------
+       1	import requests
+       2	from typing import Any, Dict, List, Optional
+       3	from dataclasses import dataclass
+       4	
+       5	from ..config import logging
+       6	
+       7	# ----------------------------------
+       8	# Data models: Request (In) / Response (Out)
+       9	# ----------------------------------
+      10	
+      11	@dataclass
+      12	class ReverseProxyIn:
+      13	    uuid: str
+      14	    name: str
+      15	    ip: str
+      16	    ports: List[int]
+      17	    allowed_ips: List[str]
+      18	
+      19	@dataclass
+      20	class ReverseProxyOut:
+      21	    id: str
+      22	
+      23	
+      24	@dataclass
+      25	class AliasIn:
+      26	    service_name: str
+      27	
+      28	@dataclass
+      29	class AliasOut:
+      30	    id: str
+      31	    service_name: str
+      32	
+      33	
+      34	@dataclass
+      35	class RuleOut:
+      36	    id: int
+      37	    action: str
+      38	    src_ip: str
+      39	    service_name: Optional[str]
+      40	
+      41	
+      42	@dataclass
+      43	class RegistrationCallbackRequest:
+      44	    """
+      45	    Payload for notifying the agent of registration outcome.
+      46	    """
+      47	    secret: str
+      48	    action: str  # "approve" or "reject"
+      49	    uuid: Optional[str] = None
+      50	    token: Optional[str] = None
+      51	
+      52	
+      53	class FirewallAgentClientError(Exception):
+      54	    """Generic exception for FirewallAgentClient errors."""
+      55	    pass
+      56	
+      57	
+      58	class FirewallAgentClient:
+      59	    """
+      60	    Client for calling a Firewall Agent's REST API, including registration callback.
+      61	    """
+      62	    def __init__(self, base_url: str, timeout: int = 10):
+      63	        self.base_url = base_url.rstrip('/')
+      64	        self.timeout = timeout
+      65	
+      66	    def _build_url(self, path: str) -> str:
+      67	        return f"{self.base_url}{path}"
+      68	
+      69	    def _request(self, method: str, path: str, json: Optional[Dict[str, Any]] = None) -> Any:
+      70	        url = self._build_url(path)
+      71	        try:
+      72	            resp = requests.request(method, url, json=json, timeout=self.timeout)
+      73	            resp.raise_for_status()
+      74	        except Exception as exc:
+      75	            logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+      76	            raise FirewallAgentClientError(f"{method} {url} failed")
+      77	        return resp.json() if resp.text else None
+      78	
+      79	    # -----------------------------------------------------------------
+      80	    # Reverse Proxy endpoints
+      81	    # -----------------------------------------------------------------
+      82	    def create_reverse_proxy(
+      83	        self, uuid: str, name: str, ip: str, ports: List[int], allowed_ips: List[str]
+      84	    ) -> ReverseProxyOut:
+      85	        """Register a reverse proxy with the agent."""
+      86	        data = self._request(
+      87	            'POST',
+      88	            '/reverse_proxies',
+      89	            json={
+      90	                'uuid': uuid,
+      91	                'name': name,
+      92	                'ip': ip,
+      93	                'ports': ports,
+      94	                'allowed_ips': allowed_ips,
+      95	            },
+      96	        )
+      97	        return ReverseProxyOut(**data)
+      98	
+      99	    def list_reverse_proxies(self) -> List[ReverseProxyIn]:
+     100	        """List all registered reverse proxies."""
+     101	        items = self._request('GET', '/reverse_proxies')
+     102	        return [ReverseProxyIn(**i) for i in items]
+     103	
+     104	    def delete_reverse_proxy(self, uuid: str) -> None:
+     105	        """Delete a reverse proxy by UUID."""
+     106	        self._request('DELETE', f'/reverse_proxies/{uuid}')
+     107	
+     108	    # -----------------------------------------------------------------
+     109	    # Alias endpoints
+     110	    # -----------------------------------------------------------------
+     111	    def create_alias(self, service_name: str) -> AliasOut:
+     112	        """Create an address alias on the firewall backend."""
+     113	        data = self._request(
+     114	            'POST',
+     115	            '/aliases',
+     116	            json={'service_name': service_name},
+     117	        )
+     118	        return AliasOut(**data)
+     119	
+     120	    def list_aliases(self) -> List[AliasOut]:
+     121	        """List all aliases."""
+     122	        items = self._request('GET', '/aliases')
+     123	        return [AliasOut(**i) for i in items]
+     124	
+     125	    def delete_alias(self, alias_id: str) -> None:
+     126	        """Delete an alias by ID."""
+     127	        self._request('DELETE', f'/aliases/{alias_id}')
+     128	
+     129	    # -----------------------------------------------------------------
+     130	    # Rule endpoints
+     131	    # -----------------------------------------------------------------
+     132	    def list_rules(self) -> List[RuleOut]:
+     133	        """List all synchronized rules."""
+     134	        items = self._request('GET', '/rules')
+     135	        return [RuleOut(**i) for i in items]
+     136	
+     137	    # -----------------------------------------------------------------
+     138	    # Registration callback
+     139	    # -----------------------------------------------------------------
+     140	    def notify_registration(self, callback: RegistrationCallbackRequest) -> None:
+     141	        """
+     142	        Notify the agent of an approved or rejected registration by POSTing to /registrations.
+     143	        """
+     144	        payload: Dict[str, Any] = {
+     145	            'secret': callback.secret,
+     146	            'action': callback.action,
+     147	        }
+     148	        if callback.action == 'approve':
+     149	            payload['uuid'] = callback.uuid
+     150	            payload['token'] = callback.token
+     151	
+     152	        self._request('POST', '/registrations', json=payload)
+
+------------------------------ core/clients/reverse_proxy_agent.py ------------------------------
+       1	import requests
+       2	from typing import Any, Dict, List, Optional
+       3	from dataclasses import dataclass
+       4	
+       5	from ..config import logging
+       6	
+       7	# ---------------------------------------------------------------------
+       8	# Data models
+       9	# ---------------------------------------------------------------------
+      10	@dataclass
+      11	class RuleOut:
+      12	    id: int
+      13	    service_id: int
+      14	    action: str
+      15	    ip: str
+      16	
+      17	@dataclass
+      18	class RegistrationCallbackRequest:
+      19	    """
+      20	    Payload for notifying the agent of registration outcome.
+      21	    """
+      22	    secret: str
+      23	    action: str  # "approve" or "reject"
+      24	    uuid: Optional[str] = None
+      25	    token: Optional[str] = None
+      26	
+      27	
+      28	class ReverseProxyAgentClientError(Exception):
+      29	    """Generic exception for ReverseProxyAgentClient errors."""
+      30	    pass
+      31	
+      32	
+      33	class ReverseProxyAgentClient:
+      34	    """
+      35	    Client for calling a Reverse Proxy Agent's REST API, including service rule management
+      36	    and registration callback.
+      37	    """
+      38	    def __init__(
+      39	        self,
+      40	        base_url: str,
+      41	        timeout: int = 10,
+      42	    ):
+      43	        """
+      44	        :param base_url: Base URL of the Reverse Proxy Agent (e.g. http://agent:8002)
+      45	        :param timeout: HTTP request timeout in seconds
+      46	        """
+      47	        self.base_url = base_url.rstrip('/')
+      48	        self.timeout = timeout
+      49	
+      50	    def _build_url(self, path: str) -> str:
+      51	        return f"{self.base_url}{path}"
+      52	
+      53	    def _request(self, method: str, path: str, json: Optional[Dict[str, Any]] = None) -> Any:
+      54	        url = self._build_url(path)
+      55	        try:
+      56	            resp = requests.request(method, url, json=json, timeout=self.timeout)
+      57	            resp.raise_for_status()
+      58	        except Exception as exc:
+      59	            logging.error(
+      60	                f"ReverseProxyAgentClient {method} {url} failed: {exc}, response: {getattr(resp, 'text', None)}"
+      61	            )
+      62	            raise ReverseProxyAgentClientError(
+      63	                f"{method} {url} failed: {getattr(resp, 'status_code', '')}"
+      64	            )
+      65	        if resp.text:
+      66	            return resp.json()
+      67	        return None
+      68	
+      69	    # -----------------------------------------------------------------
+      70	    # Service rule endpoints
+      71	    # -----------------------------------------------------------------
+      72	    def create_rule(self, service_id: int, action: str, ip: str) -> RuleOut:
+      73	        """Create a new rule for a service."""
+      74	        data = self._request(
+      75	            'POST',
+      76	            f'/rules/{service_id}',
+      77	            json={'action': action, 'ip': ip},
+      78	        )
+      79	        return RuleOut(**data)
+      80	
+      81	    def replace_rules(self, service_id: int, action: str, ip: str) -> List[RuleOut]:
+      82	        """Replace all rules for a service."""
+      83	        items = self._request(
+      84	            'PUT',
+      85	            f'/rules/{service_id}',
+      86	            json={'action': action, 'ip': ip},
+      87	        )
+      88	        return [RuleOut(**i) for i in items]
+      89	
+      90	    def delete_rules(self, service_id: int) -> Dict[str, int]:
+      91	        """Delete all rules for a service."""
+      92	        return self._request('DELETE', f'/rules/{service_id}')
+      93	
+      94	    # -----------------------------------------------------------------
+      95	    # Registration callback
+      96	    # -----------------------------------------------------------------
+      97	    def notify_registration(self, callback: RegistrationCallbackRequest) -> None:
+      98	        """
+      99	        Notify the agent of an approved or rejected registration by POSTing to /registrations.
+     100	        """
+     101	        payload: Dict[str, Any] = {
+     102	            'secret': callback.secret,
+     103	            'action': callback.action,
+     104	        }
+     105	        if callback.action == 'approve':
+     106	            payload['uuid'] = callback.uuid
+     107	            payload['token'] = callback.token
+     108	
+     109	        self._request('POST', '/registrations', json=payload)
+
+------------------------------ core/cli.py ------------------------------
        1	#!/usr/bin/env python3
        2	# core/cli.py
        3	
        4	"""
-       5	Command-line interface for Biforch Reverse Proxy Agent.
-       6	Provides commands to enqueue registration with Biforch Core
-       7	and to start the API server.
-       8	After registration, stores received UUID and token in local database.
-       9	"""
-      10	import typer
-      11	import uvicorn
-      12	
-      13	from .config import settings
-      14	
-      15	app = typer.Typer(help="Biforch Reverse Proxy Agent CLI")
-      16	
-      17	@app.command()
-      18	def serve():
+       5	Command-line interface for Biforch Core.
+       6	"""
+       7	import typer
+       8	import uvicorn
+       9	
+      10	from .config import settings, logging
+      11	
+      12	app = typer.Typer(help="Biforch Core CLI")
+      13	
+      14	@app.command()
+      15	def serve():
+      16	    """
+      17	    Start the Biforch Core API server
+      18	    (which runs background syncs, etc.).
       19	    """
-      20	    Start the Biforch Reverse Proxy Agent API server
-      21	    (which runs background syncs, etc.).
-      22	    """
-      23	    uvicorn.run(
-      24	        f"{__package__}.api:app",
-      25	        host=settings.INTERNAL_HOST,
-      26	        port=settings.INTERNAL_PORT,
-      27	        reload=settings.RELOAD,
-      28	    )
-      29	
-      30	
-      31	if __name__ == "__main__":
-      32	    app()
+      20	    logging.info("🔄 Starting API server …")
+      21	    uvicorn.run(
+      22	        f"{__package__}.api:app",
+      23	        host=settings.INTERNAL_HOST,
+      24	        port=settings.INTERNAL_PORT,
+      25	        reload=settings.RELOAD,
+      26	    )
+      27	
+      28	
+      29	if __name__ == "__main__":
+      30	    app()
 
------------------------------- biforch_core/config.py ------------------------------
+------------------------------ core/config.py ------------------------------
        1	import logging
        2	import logging.config
        3	import sys
@@ -371,7 +709,7 @@
      123	    "loggers": {
      124	        "": {
      125	            "handlers": ["console", "file"],
-     126	            "level": "INFO",
+     126	            "level": "DEBUG",
      127	            "propagate": False,
      128	        },
      129	    },
@@ -393,7 +731,7 @@
      145	    settings_json = settings.model_dump_json(indent=2)
      146	    logging.info(f"{settings_json}")
 
------------------------------- biforch_core/database.py ------------------------------
+------------------------------ core/database.py ------------------------------
        1	from sqlalchemy import create_engine
        2	from sqlalchemy.orm import sessionmaker, declarative_base
        3	from .config import settings
@@ -406,7 +744,7 @@
       10	SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
       11	Base = declarative_base()
 
------------------------------- biforch_core/dependencies.py ------------------------------
+------------------------------ core/dependencies.py ------------------------------
        1	from fastapi import Depends, HTTPException
        2	from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
        3	from sqlalchemy.orm import Session
@@ -451,7 +789,7 @@
       42	        creds: HTTPAuthorizationCredentials = Depends(security_scheme),
       43	        db: Session = Depends(get_db),
       44	    ):
-      45	        token = creds.credentials
+      45	        token = str(creds.credentials)
       46	        if ActorRole.ADMIN in allowed_roles and token == settings.ADMIN_TOKEN.get_secret_value():
       47	            return None
       48	        if ActorRole.FIREWALL in allowed_roles:
@@ -469,11 +807,11 @@
       60	        raise HTTPException(401, "Invalid or unauthorized token")
       61	    return dependency
 
------------------------------- biforch_core/__init__.py ------------------------------
+------------------------------ core/__init__.py ------------------------------
        1	"""Package entry‑point – re‑export the FastAPI application."""
        2	from .api import app  # noqa: F401  (re‑export for `uvicorn firewall_agent:app`)
 
------------------------------- biforch_core/models.py ------------------------------
+------------------------------ core/models.py ------------------------------
        1	import uuid
        2	import secrets
        3	from datetime import datetime
@@ -483,7 +821,7 @@
        7	)
        8	from sqlalchemy.orm import relationship
        9	from enum import Enum
-      10	from .database import Base
+      10	from .database import Base, engine
       11	
       12	class PendingType(str, Enum):
       13	    FIREWALL = "firewall"
@@ -539,7 +877,7 @@
       63	class RuleDB(Base):
       64	    __tablename__ = "rules"
       65	    id = Column(Integer, primary_key=True, index=True)
-      66	    firewall_rule_uuid = Column(String, nullable=False, unique=True)
+      66	    firewall_rule_id = Column(String, nullable=False, unique=True)
       67	    action = Column(String, nullable=False)
       68	    ip = Column(String, nullable=False)
       69	    service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
@@ -556,8 +894,12 @@
       80	    src_ip = Column(String, nullable=False)
       81	    secret = Column(String, nullable=False)
       82	    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+      83	    
+      84	    
+      85	# Create tables on first import – SQLite is file‑based so safe for dev
+      86	Base.metadata.create_all(bind=engine)
 
------------------------------- biforch_core/schemas.py ------------------------------
+------------------------------ core/schemas.py ------------------------------
        1	from enum import Enum as PyEnum
        2	from datetime import datetime
        3	from pydantic import BaseModel, ConfigDict, field_serializer
@@ -606,13 +948,13 @@
       46	    id: int
       47	
       48	class RuleIn(BaseModel):
-      49	    firewall_rule_uuid: str
+      49	    firewall_rule_id: str
       50	    action: str
-      51	    ip: str
+      51	    src_ip: str
       52	    service: str
       53	
       54	class RuleOut(BaseModel):
-      55	    firewall_rule_uuid: str
+      55	    firewall_rule_id: str
       56	
       57	class PendingRequestOut(BaseModel):
       58	    request_id: int
@@ -626,799 +968,372 @@
       66	    secret: str
       67	    created_at: datetime
       68	    model_config = ConfigDict(from_attributes=True)
-      69	
-      70	class PendingApproveOut(BaseModel):
-      71	    id: int
-      72	    status: Literal["approved", "rejected"]
-      73	    entity_id: int | None
+      69	    
+      70	class PendingApproveIn(BaseModel):
+      71	    action: Literal["approve", "reject"]
+      72	
+      73	class PendingApproveOut(BaseModel):
+      74	    id: int
+      75	    status: Literal["approved", "rejected"]
+      76	    entity_id: int | None
 
------------------------------- biforch_core/services.py ------------------------------
-       1	import json
-       2	from datetime import datetime
-       3	from pydantic import BaseModel
-       4	from sqlalchemy.orm import Session
-       5	from fastapi import HTTPException, Request
-       6	import requests
-       7	import uuid
-       8	import secrets
-       9	from .models import (
-      10	    PendingRegistrationDB, PendingType,
-      11	    FirewallDB, ReverseProxyDB, ServiceDiscoveryDB,
-      12	    ServiceDB, RuleDB
-      13	)
-      14	from .config import settings
-      15	
-      16	
-      17	def gen_secret() -> str:
-      18	    return secrets.token_hex(16)
-      19	
-      20	
-      21	def enqueue_registration(
-      22	    reg_type: PendingType,
-      23	    data: BaseModel,
-      24	    request: Request,
-      25	    db: Session,
-      26	) -> tuple[int, str]:
-      27	    payload = json.dumps(data.model_dump())
-      28	    secret = gen_secret()
-      29	    pr = PendingRegistrationDB(
-      30	        type=reg_type,
-      31	        data=payload,
-      32	        src_ip=request.client.host or "unknown",
-      33	        secret=secret,
-      34	    )
-      35	    db.add(pr)
-      36	    db.commit()
-      37	    db.refresh(pr)
-      38	    return pr.id, secret
-      39	
-      40	
-      41	def approve_registration(
-      42	    req_id: int,
-      43	    action: str,
-      44	    db: Session,
-      45	):
-      46	    pr = db.get(PendingRegistrationDB, req_id)
-      47	    if not pr:
-      48	        raise HTTPException(404, "request not found")
-      49	    if action not in ("approve", "reject"):
-      50	        raise HTTPException(400, "invalid action")
-      51	    entity = None
-      52	    status = "rejected"
-      53	    if action == "approve":
-      54	        # instantiate appropriate approver...
-      55	        # create entity, notify callback
-      56	        status = "approved"
-      57	    # callback logic omitted for brevity
-      58	    db.delete(pr)
-      59	    db.commit()
-      60	    return status
-
------------------------------- core.py ------------------------------
-       1	# core.py
+------------------------------ core/services.py ------------------------------
+       1	# core/services.py – refactored with detailed debug logging
        2	
-       3	"""
-       4	Biforch Core Service
-       5	Provides endpoints to register and manage a single Firewall,
-       6	Reverse Proxies, Service Discovery instances, Services, and Rules.
-       7	Also supports a pending-registration queue with admin approval and agent callback.
-       8	"""
-       9	from __future__ import annotations
-      10	
-      11	import json
-      12	import logging
-      13	import secrets
-      14	import uuid
-      15	from datetime import datetime
-      16	from enum import Enum, auto
-      17	from typing import (
-      18	    Callable, Dict, Generator, List, Literal, Protocol, Union
-      19	)
-      20	
-      21	import requests
-      22	from fastapi import (
-      23	    Body, Depends, FastAPI, HTTPException, Request
-      24	)
-      25	from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-      26	from pydantic import BaseModel, ConfigDict, field_serializer
-      27	from sqlalchemy import (
-      28	    Column, DateTime, Enum as SAEnum, ForeignKey,
-      29	    Integer, String, UniqueConstraint, create_engine,
-      30	    func, select
+       3	import json
+       4	import uuid
+       5	import secrets
+       6	from typing import Optional, Callable, Dict, Tuple, List
+       7	from sqlite3 import IntegrityError
+       8	
+       9	from pydantic import BaseModel
+      10	from sqlalchemy.orm import Session
+      11	from fastapi import HTTPException, Request
+      12	
+      13	
+      14	from .config import logging
+      15	from .models import (
+      16	    PendingRegistrationDB,
+      17	    PendingType,
+      18	    FirewallDB,
+      19	    ReverseProxyDB,
+      20	    ServiceDiscoveryDB,
+      21	)
+      22	from .clients.factory import (
+      23	    get_firewall_agent_client,
+      24	    get_reverse_proxy_agent_client,
+      25	)
+      26	from .clients.firewall_agent import (
+      27	    RegistrationCallbackRequest as FWCallback,
+      28	)
+      29	from .clients.reverse_proxy_agent import (
+      30	    RegistrationCallbackRequest as RPCallback,
       31	)
-      32	from sqlalchemy.orm import (
-      33	    Session, declarative_base, relationship, sessionmaker
-      34	)
-      35	
-      36	# -----------------------------------------------------------------------------
-      37	# Configuration constants (from config.py)
-      38	# -----------------------------------------------------------------------------
-      39	from config import DB_PATH, TIMEOUT, ADMIN_TOKEN
-      40	
-      41	DATABASE_URL = f"sqlite:///./{DB_PATH}"
-      42	engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-      43	SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-      44	Base = declarative_base()
+      32	
+      33	
+      34	# ---------------------------------------------------------------------------
+      35	# helpers
+      36	# ---------------------------------------------------------------------------
+      37	
+      38	def gen_secret() -> str:
+      39	    """Generate a cryptographically‑secure secret string."""
+      40	    return secrets.token_hex(16)
+      41	
+      42	# ---------------------------------------------------------------------------
+      43	# Registration spec – maps a PendingType to its handling details
+      44	# ---------------------------------------------------------------------------
       45	
-      46	# -----------------------------------------------------------------------------
-      47	# Security helpers
-      48	# -----------------------------------------------------------------------------
-      49	security_scheme = HTTPBearer()
-      50	
-      51	
-      52	def gen_token() -> str:
-      53	    """Generate a 32-character secure random hex token."""
-      54	    return secrets.token_hex(16)
-      55	
-      56	
-      57	def get_db() -> Generator[Session, None, None]:
-      58	    """Provide a DB session, closing it after the request."""
-      59	    db = SessionLocal()
-      60	    try:
-      61	        yield db
-      62	    finally:
-      63	        db.close()
+      46	class RegistrationSpec(Dict):
+      47	    """Lightweight container describing how to handle a registration type."""
+      48	
+      49	    def __init__(
+      50	        self,
+      51	        factory: Callable[[dict, str, str], BaseModel],
+      52	        client_getter: Callable[[Session, str], object],
+      53	        callback_cls: type,
+      54	        post_hooks: Optional[List[Callable[[Session, BaseModel], None]]] = None,
+      55	    ) -> None:
+      56	        self.factory = factory
+      57	        self.client_getter = client_getter
+      58	        self.callback_cls = callback_cls
+      59	        self.post_hooks = post_hooks or []
+      60	
+      61	# ---------------------------------------------------------------------------
+      62	# post‑hooks
+      63	# ---------------------------------------------------------------------------
       64	
-      65	# -----------------------------------------------------------------------------
-      66	# Actor roles enumeration
-      67	# -----------------------------------------------------------------------------
-      68	
-      69	
-      70	class ActorRole(Enum):
-      71	    ADMIN = auto()
-      72	    FIREWALL = auto()
-      73	    REVERSE_PROXY = auto()
-      74	    SERVICE_DISCOVERY = auto()
-      75	
-      76	
-      77	def get_current_actor(
-      78	    allowed_roles: List[ActorRole]
-      79	) -> Callable[..., Union[None, FirewallDB, ReverseProxyDB, ServiceDiscoveryDB]]:
-      80	    """
-      81	    Validates an actor's token against allowed_roles.
-      82	    Admin returns None, others return their DB model.
-      83	    """
-      84	    def dependency(
-      85	        creds: HTTPAuthorizationCredentials = Depends(security_scheme),
-      86	        db: Session = Depends(get_db),
-      87	    ) -> Union[None, FirewallDB, ReverseProxyDB, ServiceDiscoveryDB]:
-      88	        token = creds.credentials
-      89	        if ActorRole.ADMIN in allowed_roles and token == ADMIN_TOKEN:
-      90	            return None
-      91	        if ActorRole.FIREWALL in allowed_roles:
-      92	            fw = db.query(FirewallDB).filter_by(token=token).first()
-      93	            if fw:
-      94	                return fw
-      95	        if ActorRole.REVERSE_PROXY in allowed_roles:
-      96	            rp = db.query(ReverseProxyDB).filter_by(token=token).first()
-      97	            if rp:
-      98	                return rp
-      99	        if ActorRole.SERVICE_DISCOVERY in allowed_roles:
-     100	            sd = db.query(ServiceDiscoveryDB).filter_by(token=token).first()
-     101	            if sd:
-     102	                return sd
-     103	        raise HTTPException(401, "Invalid or unauthorized token")
-     104	    return dependency
-     105	
-     106	# -----------------------------------------------------------------------------
-     107	# ORM models
-     108	# -----------------------------------------------------------------------------
-     109	
-     110	
-     111	class FirewallDB(Base):
-     112	    __tablename__ = "firewalls"
-     113	    id = Column(Integer, primary_key=True, index=True)
-     114	    uuid = Column(String(36), unique=True, nullable=False)
-     115	    token = Column(String, nullable=False)
-     116	    name = Column(String, nullable=False, unique=True)
-     117	    api_url = Column(String, nullable=False)
-     118	    rules = relationship(
-     119	        "RuleDB", back_populates="firewall", cascade="all, delete")
-     120	
-     121	
-     122	class ReverseProxyDB(Base):
-     123	    __tablename__ = "reverse_proxies"
-     124	    id = Column(Integer, primary_key=True, index=True)
-     125	    uuid = Column(String(36), unique=True, nullable=False)
-     126	    token = Column(String, nullable=False)
-     127	    name = Column(String, nullable=False, unique=True)
-     128	    ip = Column(String, nullable=False)
-     129	    ports = Column(String, nullable=False)  # comma-separated
-     130	    api_url = Column(String, nullable=False)
-     131	    services = relationship(
-     132	        "ServiceDB", back_populates="reverse_proxy",
-     133	        cascade="all, delete",
-     134	        primaryjoin="ReverseProxyDB.uuid==ServiceDB.reverse_proxy_uuid",
-     135	    )
-     136	
+      65	def _push_reverse_proxy_to_firewalls(db: Session, entity: ReverseProxyDB) -> None:
+      66	    """Synchronise a newly approved reverse‑proxy with *all* firewalls.
+      67	
+      68	    If any firewall fails to accept the registration, the raised exception
+      69	    will be caught by the caller and trigger a rollback.
+      70	    """
+      71	    logging.debug("Registering reverse‑proxy %s with all firewalls", entity.uuid)
+      72	    fws: List[FirewallDB] = db.query(FirewallDB).all()
+      73	
+      74	    for fw in fws:
+      75	        logging.debug(" → pushing to firewall uuid=%s api=%s", fw.uuid, fw.api_url)
+      76	        client = get_firewall_agent_client(db, fw.uuid)
+      77	        try:
+      78	            client.create_reverse_proxy(
+      79	                uuid=entity.uuid,
+      80	                name=entity.name,
+      81	                ip=entity.ip,
+      82	                ports=list(map(int, entity.ports.split(','))),
+      83	                allowed_ips=["0.0.0.0/0"]
+      84	            )
+      85	            logging.debug("   ✔ pushed successfully")
+      86	        except Exception as exc:
+      87	            logging.debug("   ✖ push failed: %s", exc, exc_info=True)
+      88	            raise  # propagate to outer logic for rollback
+      89	
+      90	# ---------------------------------------------------------------------------
+      91	# spec map
+      92	# ---------------------------------------------------------------------------
+      93	
+      94	_registry_factories = {
+      95	    PendingType.FIREWALL: lambda p, u, t: FirewallDB(
+      96	        uuid=u, token=t, name=p["name"], api_url=p["api_url"]
+      97	    ),
+      98	    PendingType.REVERSE_PROXY: lambda p, u, t: ReverseProxyDB(
+      99	        uuid=u,
+     100	        token=t,
+     101	        name=p["name"],
+     102	        ip=p["ip"],
+     103	        ports=",".join(map(str, p["ports"])),
+     104	        api_url=p["api_url"],
+     105	    ),
+     106	    PendingType.SERVICE_DISCOVERY: lambda p, u, t: ServiceDiscoveryDB(
+     107	        uuid=u,
+     108	        token=t,
+     109	        name=p["name"],
+     110	        bind_reverse_proxy_id=p["bind_reverse_proxy_id"],
+     111	        api_url=p["api_url"],
+     112	    ),
+     113	}
+     114	
+     115	_spec_map: Dict[PendingType, RegistrationSpec] = {
+     116	    PendingType.FIREWALL: RegistrationSpec(
+     117	        factory=_registry_factories[PendingType.FIREWALL],
+     118	        client_getter=get_firewall_agent_client,
+     119	        callback_cls=FWCallback,
+     120	    ),
+     121	    PendingType.REVERSE_PROXY: RegistrationSpec(
+     122	        factory=_registry_factories[PendingType.REVERSE_PROXY],
+     123	        client_getter=get_reverse_proxy_agent_client,
+     124	        callback_cls=RPCallback,
+     125	        post_hooks=[_push_reverse_proxy_to_firewalls],
+     126	    ),
+     127	    PendingType.SERVICE_DISCOVERY: RegistrationSpec(
+     128	        factory=_registry_factories[PendingType.SERVICE_DISCOVERY],
+     129	        client_getter=get_reverse_proxy_agent_client,
+     130	        callback_cls=RPCallback,
+     131	    ),
+     132	}
+     133	
+     134	# ---------------------------------------------------------------------------
+     135	# Core helper functions
+     136	# ---------------------------------------------------------------------------
      137	
-     138	class ServiceDiscoveryDB(Base):
-     139	    __tablename__ = "service_discovery"
-     140	    id = Column(Integer, primary_key=True, index=True)
-     141	    uuid = Column(String(36), unique=True, nullable=False)
-     142	    token = Column(String, nullable=False)
-     143	    name = Column(String, nullable=False, unique=True)
-     144	    bind_reverse_proxy_id = Column(
-     145	        Integer, ForeignKey("reverse_proxies.id"), nullable=False
-     146	    )
-     147	    api_url = Column(String, nullable=False)
-     148	    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-     149	    reverse_proxy = relationship("ReverseProxyDB")
-     150	
-     151	
-     152	class ServiceDB(Base):
-     153	    __tablename__ = "services"
-     154	    id = Column(Integer, primary_key=True, index=True)
-     155	    name = Column(String, nullable=False, unique=True)
-     156	    reverse_proxy_uuid = Column(String(36), ForeignKey(
-     157	        "reverse_proxies.uuid"), nullable=False)
-     158	    reverse_proxy = relationship(
-     159	        "ReverseProxyDB", back_populates="services",
-     160	        primaryjoin="ServiceDB.reverse_proxy_uuid==ReverseProxyDB.uuid",
-     161	    )
-     162	    rules = relationship(
-     163	        "RuleDB", back_populates="service", cascade="all, delete")
-     164	
-     165	
-     166	class RuleDB(Base):
-     167	    __tablename__ = "rules"
-     168	    id = Column(Integer, primary_key=True, index=True)
-     169	    firewall_rule_uuid = Column(String, nullable=False, unique=True)
-     170	    action = Column(String, nullable=False)
-     171	    ip = Column(String, nullable=False)
-     172	    service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
-     173	    firewall_id = Column(Integer, ForeignKey("firewalls.id"), nullable=False)
-     174	    service = relationship("ServiceDB", back_populates="rules")
-     175	    firewall = relationship("FirewallDB", back_populates="rules")
-     176	    __table_args__ = (UniqueConstraint(
-     177	        "ip", "service_id", name="uniq_ip_service"),)
-     178	
-     179	# -----------------------------------------------------------------------------
-     180	# Pending-registration queue
-     181	# -----------------------------------------------------------------------------
-     182	
-     183	
-     184	class PendingType(str, Enum):
-     185	    FIREWALL = "firewall"
-     186	    REVERSE_PROXY = "reverse_proxy"
-     187	    SERVICE_DISCOVERY = "service_discovery"
-     188	
-     189	
-     190	class PendingRegistrationDB(Base):
-     191	    __tablename__ = "pending_registrations"
-     192	    id = Column(Integer, primary_key=True, index=True)
-     193	    type = Column(SAEnum(PendingType), nullable=False)
-     194	    data = Column(String, nullable=False)  # JSON payload
-     195	    src_ip = Column(String, nullable=False)
-     196	    secret = Column(String, nullable=False)
-     197	    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-     198	
-     199	
-     200	Base.metadata.create_all(bind=engine)
-     201	
-     202	# -----------------------------------------------------------------------------
-     203	# Pydantic schemas
-     204	# -----------------------------------------------------------------------------
-     205	
-     206	
-     207	class FirewallIn(BaseModel):
-     208	    name: str
-     209	    api_url: str
-     210	
+     138	def enqueue_registration(
+     139	    reg_type: PendingType,
+     140	    data: BaseModel,
+     141	    request: Request,
+     142	    db: Session,
+     143	) -> Tuple[int, str]:
+     144	    """Insert a new pending registration and return `(id, secret)`."""
+     145	    logging.debug("Enqueuing registration type=%s ip=%s", reg_type, request.client.host)
+     146	    payload = json.dumps(data.model_dump())
+     147	    secret = gen_secret()
+     148	
+     149	    pr = PendingRegistrationDB(
+     150	        type=reg_type,
+     151	        data=payload,
+     152	        src_ip=request.client.host or "unknown",
+     153	        secret=secret,
+     154	    )
+     155	    db.add(pr)
+     156	    db.commit()
+     157	    db.refresh(pr)
+     158	    logging.debug(" → queued with id=%s secret=%s", pr.id, secret)
+     159	    return pr.id, secret
+     160	
+     161	
+     162	def _notify(
+     163	    db: Session,
+     164	    client_getter: Callable[[Session, str], object],
+     165	    callback_cls: type,
+     166	    secret: str,
+     167	    action: str,
+     168	    **kwargs,
+     169	) -> None:
+     170	    """Send registration callback to the agent via its client."""
+     171	    logging.debug("Notifying agent action=%s secret=%s kwargs=%s", action, secret, kwargs)
+     172	    client = client_getter(db, kwargs.get("uuid", ""))
+     173	    client.notify_registration(callback_cls(secret=secret, action=action, **kwargs))
+     174	
+     175	
+     176	def _approve(pr: PendingRegistrationDB, payload: dict, db: Session) -> Tuple[str, int]:
+     177	    """Approve a pending registration and execute related side‑effects."""
+     178	    spec = _spec_map[pr.type]
+     179	
+     180	    # 1. Persist entity
+     181	    token = secrets.token_hex(16)
+     182	    entity_uuid = str(uuid.uuid4())
+     183	    entity = spec.factory(payload, entity_uuid, token)
+     184	
+     185	    logging.debug("Persisting new entity uuid=%s for type=%s", entity_uuid, pr.type)
+     186	    db.add(entity)
+     187	    try:
+     188	        db.commit()
+     189	    except IntegrityError as e:
+     190	        logging.debug("DB integrity error: %s", e, exc_info=True)
+     191	        db.rollback()
+     192	        raise HTTPException(400, f"Entity creation failed: {e.orig}")
+     193	    db.refresh(entity)
+     194	
+     195	    # 2. Notify the requesting agent
+     196	    try:
+     197	        _notify(
+     198	            db,
+     199	            spec.client_getter,
+     200	            spec.callback_cls,
+     201	            secret=pr.secret,
+     202	            action="approve",
+     203	            uuid=entity.uuid,
+     204	            token=entity.token,
+     205	        )
+     206	    except Exception as exc:
+     207	        logging.debug("Callback failed, rolling back entity: %s", exc, exc_info=True)
+     208	        db.delete(entity)
+     209	        db.commit()
+     210	        raise HTTPException(502, f"Callback to agent failed: {exc}")
      211	
-     212	class FirewallOut(BaseModel):
-     213	    id: int
-     214	    uuid: str
-     215	    token: str
-     216	
-     217	
-     218	class ReverseProxyIn(BaseModel):
-     219	    name: str
-     220	    ip: str
-     221	    ports: List[int]
-     222	    api_url: str
-     223	    model_config = ConfigDict(from_attributes=True)
-     224	
-     225	    @field_serializer("ports", when_used="json")
-     226	    def serialize_ports(self, v: List[int]) -> List[int]:
-     227	        return v
+     212	    # 3. Execute any post‑hooks (e.g., push RP to all firewalls)
+     213	    for hook in spec.post_hooks:
+     214	        logging.debug("Running post‑hook %s for entity uuid=%s", hook.__name__, entity.uuid)
+     215	        try:
+     216	            hook(db, entity)
+     217	        except Exception as exc:
+     218	            logging.debug("Post‑hook failed, rolling back: %s", exc, exc_info=True)
+     219	            db.delete(entity)
+     220	            db.commit()
+     221	            raise HTTPException(502, f"Post‑hook failed: {exc}")
+     222	
+     223	    # 4. Clear pending row
+     224	    logging.debug("Approval succeeded, deleting pending id=%s", pr.id)
+     225	    db.delete(pr)
+     226	    db.commit()
+     227	    return "approved", entity.id
      228	
      229	
-     230	class ReverseProxyOut(BaseModel):
-     231	    id: int
-     232	    uuid: str
-     233	    token: str
-     234	
-     235	
-     236	class ServiceDiscoveryIn(BaseModel):
-     237	    name: str
-     238	    bind_reverse_proxy_id: int
-     239	    api_url: str
-     240	
-     241	
-     242	class ServiceDiscoveryOut(BaseModel):
-     243	    id: int
-     244	    uuid: str
-     245	    token: str
-     246	
+     230	def _reject(pr: PendingRegistrationDB, db: Session) -> Tuple[str, None]:
+     231	    """Reject a pending registration and inform the agent."""
+     232	    spec = _spec_map[pr.type]
+     233	    logging.debug("Rejecting pending id=%s type=%s", pr.id, pr.type)
+     234	    try:
+     235	        _notify(db, spec.client_getter, spec.callback_cls, secret=pr.secret, action="reject")
+     236	    except Exception as exc:
+     237	        logging.debug("Reject callback failed: %s", exc, exc_info=True)
+     238	        raise HTTPException(502, f"Callback to agent failed: {exc}")
+     239	
+     240	    db.delete(pr)
+     241	    db.commit()
+     242	    return "rejected", None
+     243	
+     244	# ---------------------------------------------------------------------------
+     245	# Public API
+     246	# ---------------------------------------------------------------------------
      247	
-     248	class ServiceIn(BaseModel):
-     249	    service: str
-     250	    reverse_proxy_uuid: str
-     251	
-     252	
-     253	class ServiceOut(BaseModel):
-     254	    id: int
-     255	
-     256	
-     257	class RuleIn(BaseModel):
-     258	    firewall_rule_uuid: str
-     259	    action: str
-     260	    ip: str
-     261	    service: str
+     248	def approve_registration(
+     249	    req_id: int,
+     250	    action: str,
+     251	    db: Session,
+     252	) -> Tuple[str, Optional[int]]:
+     253	    """Main entry to approve/reject a pending registration."""
+     254	    logging.debug("approve_registration called id=%s action=%s", req_id, action)
+     255	    pr = db.get(PendingRegistrationDB, req_id)
+     256	    if not pr:
+     257	        logging.debug("Pending request not found: id=%s", req_id)
+     258	        raise HTTPException(404, "request not found")
+     259	
+     260	    if action not in ("approve", "reject"):
+     261	        raise HTTPException(400, "invalid action")
      262	
-     263	
-     264	class RuleOut(BaseModel):
-     265	    firewall_rule_uuid: str
-     266	
-     267	
-     268	class PendingRequestOut(BaseModel):
-     269	    request_id: int
-     270	    secret: str
-     271	
-     272	
-     273	class PendingOut(BaseModel):
-     274	    id: int
-     275	    type: PendingType
-     276	    data: str
-     277	    src_ip: str
-     278	    secret: str
-     279	    created_at: datetime
-     280	    model_config = ConfigDict(from_attributes=True)
-     281	
-     282	
-     283	class PendingApproveOut(BaseModel):
-     284	    id: int
-     285	    status: Literal["approved", "rejected"]
-     286	    entity_id: int | None
-     287	
-     288	# -----------------------------------------------------------------------------
-     289	# Approver protocol & implementations (承接原 create_* 邏輯)
-     290	# -----------------------------------------------------------------------------
-     291	
-     292	
-     293	class Approver(Protocol):
-     294	    model: type[BaseModel]
-     295	    def run(self, db: Session, data: BaseModel) -> Union[FirewallDB,
-     296	                                                         ReverseProxyDB, ServiceDiscoveryDB]: ...
-     297	
-     298	
-     299	class FirewallApprover:
-     300	    model = FirewallIn
-     301	
-     302	    def run(self, db: Session, data: FirewallIn) -> FirewallDB:
-     303	        if db.scalar(select(func.count()).select_from(FirewallDB)):
-     304	            raise HTTPException(400, "Firewall already registered")
-     305	        fw = FirewallDB(
-     306	            uuid=str(uuid.uuid4()),
-     307	            token=gen_token(),
-     308	            name=data.name,
-     309	            api_url=data.api_url,
-     310	        )
-     311	        db.add(fw)
-     312	        db.commit()
-     313	        db.refresh(fw)
-     314	        return fw
-     315	
-     316	
-     317	class ReverseProxyApprover:
-     318	    model = ReverseProxyIn
-     319	
-     320	    def run(self, db: Session, data: ReverseProxyIn) -> ReverseProxyDB:
-     321	        if db.query(ReverseProxyDB).filter_by(name=data.name).first():
-     322	            raise HTTPException(400, "duplicate reverse-proxy name")
-     323	        firewall = db.query(FirewallDB).first()
-     324	        if not firewall:
-     325	            raise HTTPException(400, "no firewall registered yet")
-     326	        rp = ReverseProxyDB(
-     327	            uuid=str(uuid.uuid4()),
-     328	            token=gen_token(),
-     329	            name=data.name,
-     330	            ip=data.ip,
-     331	            ports=",".join(map(str, data.ports)),
-     332	            api_url=data.api_url,
-     333	        )
-     334	        # notify firewall-agent
-     335	        try:
-     336	            requests.post(
-     337	                f"{firewall.api_url.rstrip('/')}/reverse_proxies",
-     338	                json={
-     339	                    "uuid": rp.uuid,
-     340	                    "name": rp.name,
-     341	                    "ip": rp.ip,
-     342	                    "ports": data.ports,
-     343	                    "allowed_ips": ["0.0.0.0/0"],
-     344	                },
-     345	                timeout=TIMEOUT,
-     346	            ).raise_for_status()
-     347	        except Exception as exc:
-     348	            raise HTTPException(
-     349	                502, f"Failed to register reverse proxy: {exc}")
-     350	        db.add(rp)
-     351	        db.commit()
-     352	        db.refresh(rp)
-     353	        return rp
-     354	
-     355	
-     356	class ServiceDiscoveryApprover:
-     357	    model = ServiceDiscoveryIn
-     358	
-     359	    def run(self, db: Session, data: ServiceDiscoveryIn) -> ServiceDiscoveryDB:
-     360	        if db.query(ServiceDiscoveryDB).filter_by(name=data.name).first():
-     361	            raise HTTPException(400, "duplicate service-discovery name")
-     362	        if not db.get(ReverseProxyDB, data.bind_reverse_proxy_id):
-     363	            raise HTTPException(404, "reverse-proxy not found")
-     364	        sd = ServiceDiscoveryDB(
-     365	            uuid=str(uuid.uuid4()),
-     366	            token=gen_token(),
-     367	            name=data.name,
-     368	            bind_reverse_proxy_id=data.bind_reverse_proxy_id,
-     369	            api_url=data.api_url,
-     370	        )
-     371	        db.add(sd)
-     372	        db.commit()
-     373	        db.refresh(sd)
-     374	        return sd
-     375	
-     376	
-     377	APPROVER_REGISTRY: Dict[PendingType, Approver] = {
-     378	    PendingType.FIREWALL: FirewallApprover(),
-     379	    PendingType.REVERSE_PROXY: ReverseProxyApprover(),
-     380	    PendingType.SERVICE_DISCOVERY: ServiceDiscoveryApprover(),
-     381	}
-     382	
-     383	# -----------------------------------------------------------------------------
-     384	# FastAPI application
-     385	# -----------------------------------------------------------------------------
-     386	app = FastAPI(title="Biforch Core")
-     387	
-     388	# -----------------------------------------------------------------------------
-     389	# Helper – enqueue pending with secret
-     390	# -----------------------------------------------------------------------------
-     391	
-     392	
-     393	def _enqueue_registration(
-     394	    reg_type: PendingType,
-     395	    data: BaseModel,
-     396	    request: Request,
-     397	    db: Session,
-     398	) -> tuple[int, str]:
-     399	    payload = json.dumps(data.model_dump())
-     400	    secret = gen_token()
-     401	    pr = PendingRegistrationDB(
-     402	        type=reg_type,
-     403	        data=payload,
-     404	        src_ip=request.client.host or "unknown",
-     405	        secret=secret,
-     406	    )
-     407	    db.add(pr)
-     408	    db.commit()
-     409	    db.refresh(pr)
-     410	    return pr.id, secret
-     411	
-     412	# -----------------------------------------------------------------------------
-     413	# Public registration endpoints
-     414	# -----------------------------------------------------------------------------
-     415	
-     416	
-     417	@app.post("/firewall", response_model=PendingRequestOut)
-     418	async def create_firewall(
-     419	    body: FirewallIn,
-     420	    request: Request,
-     421	    db: Session = Depends(get_db),
-     422	):
-     423	    req_id, secret = _enqueue_registration(
-     424	        PendingType.FIREWALL, body, request, db)
-     425	    return {"request_id": req_id, "secret": secret}
-     426	
-     427	
-     428	@app.delete(
-     429	    "/firewall/{fw_id}",
-     430	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))],
-     431	)
-     432	def delete_firewall(
-     433	    fw_id: int,
-     434	    db: Session = Depends(get_db),
-     435	) -> None:
-     436	    fw = db.get(FirewallDB, fw_id)
-     437	    if not fw:
-     438	        raise HTTPException(404, "firewall not found")
-     439	    db.delete(fw)
-     440	    db.commit()
-     441	
-     442	
-     443	@app.post("/reverse_proxy", response_model=PendingRequestOut)
-     444	async def create_reverse_proxy(
-     445	    body: ReverseProxyIn,
-     446	    request: Request,
-     447	    db: Session = Depends(get_db),
-     448	):
-     449	    req_id, secret = _enqueue_registration(
-     450	        PendingType.REVERSE_PROXY, body, request, db)
-     451	    return {"request_id": req_id, "secret": secret}
-     452	
-     453	
-     454	@app.delete(
-     455	    "/reverse_proxy/{rp_id}",
-     456	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))],
-     457	)
-     458	def delete_reverse_proxy(
-     459	    rp_id: int,
-     460	    db: Session = Depends(get_db),
-     461	) -> None:
-     462	    rp = db.get(ReverseProxyDB, rp_id)
-     463	    if not rp:
-     464	        raise HTTPException(404, "reverse-proxy not found")
-     465	    firewall = db.query(FirewallDB).first()
-     466	    if firewall:
-     467	        try:
-     468	            requests.delete(
-     469	                f"{firewall.api_url.rstrip('/')}/reverse_proxies/{rp.uuid}",
-     470	                timeout=TIMEOUT,
-     471	            ).raise_for_status()
-     472	        except Exception:
-     473	            logging.warning("failed to notify firewall of deletion")
-     474	    db.delete(rp)
-     475	    db.commit()
-     476	
-     477	
-     478	@app.post("/service_discovery", response_model=PendingRequestOut)
-     479	async def create_service_discovery(
-     480	    body: ServiceDiscoveryIn,
-     481	    request: Request,
-     482	    db: Session = Depends(get_db),
-     483	):
-     484	    req_id, secret = _enqueue_registration(
-     485	        PendingType.SERVICE_DISCOVERY, body, request, db)
-     486	    return {"request_id": req_id, "secret": secret}
-     487	
-     488	
-     489	@app.delete(
-     490	    "/service_discovery/{sd_id}",
-     491	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))],
-     492	)
-     493	def delete_service_discovery(
-     494	    sd_id: int,
-     495	    db: Session = Depends(get_db),
-     496	) -> None:
-     497	    sd = db.get(ServiceDiscoveryDB, sd_id)
-     498	    if not sd:
-     499	        raise HTTPException(404, "service-discovery not found")
-     500	    db.delete(sd)
-     501	    db.commit()
-     502	# -----------------------------------------------------------------------------
-     503	# Admin endpoints – list & approve/reject pending
-     504	# -----------------------------------------------------------------------------
-     505	
-     506	
-     507	@app.get(
-     508	    "/pending_registrations",
-     509	    response_model=List[PendingOut],
-     510	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))],
-     511	)
-     512	def list_pending(db: Session = Depends(get_db)):
-     513	    return db.query(PendingRegistrationDB).order_by(PendingRegistrationDB.created_at).all()
-     514	
-     515	
-     516	
-     517	@app.patch(
-     518	    "/pending_registrations/{req_id}",
-     519	    response_model=PendingApproveOut,
-     520	    dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))],
-     521	)
-     522	def patch_pending_registration(
-     523	    req_id: int,
-     524	    action: Literal["approve", "reject"] = Body(..., embed=True),
-     525	    db: Session = Depends(get_db),
-     526	):
-     527	    pr = db.get(PendingRegistrationDB, req_id)
-     528	    if not pr:
-     529	        raise HTTPException(404, "request not found")
-     530	
-     531	    status: Literal["approved", "rejected"]
-     532	    entity = None
-     533	
-     534	    if action == "reject":
-     535	        status = "rejected"
-     536	    else:
-     537	        approver = APPROVER_REGISTRY[pr.type]
-     538	        data_model = approver.model.model_validate_json(pr.data)
-     539	        entity = approver.run(db, data_model)
-     540	        status = "approved"
-     541	
-     542	    try:
-     543	        callback_url = data_model.api_url.rstrip("/") + "/registrations"
-     544	        payload = {
-     545	            "secret": pr.secret,
-     546	            "action": action,
-     547	        }
-     548	        # if we approved, include the new entity's uuid (and token)
-     549	        if action == "approve" and entity is not None:
-     550	            payload["uuid"] = entity.uuid
-     551	            payload["token"] = entity.token
-     552	        requests.post(
-     553	            callback_url,
-     554	            json=payload,
-     555	            timeout=TIMEOUT,
-     556	        ).raise_for_status()
-     557	    except Exception as exc:
-     558	        logging.warning("Callback to agent failed: %s", exc)
-     559	
-     560	    db.delete(pr)
-     561	    db.commit()
-     562	    return PendingApproveOut(
-     563	        id=req_id,
-     564	        status=status,
-     565	        entity_id=(entity.id if entity else None)
-     566	    )
-     567	
-     568	
-     569	# -----------------------------------------------------------------------------
-     570	# Service endpoints (Reverse Proxy or Service Discovery)
-     571	# -----------------------------------------------------------------------------
-     572	@app.post(
-     573	    "/service",
-     574	    response_model=ServiceOut,
-     575	)
-     576	def create_service(
-     577	    body: ServiceIn,
-     578	    caller: Union[ReverseProxyDB, ServiceDiscoveryDB] = Depends(get_current_actor([
-     579	        ActorRole.REVERSE_PROXY,
-     580	        ActorRole.SERVICE_DISCOVERY,
-     581	    ])),
-     582	    db: Session = Depends(get_db),
-     583	) -> ServiceOut:
-     584	    rp = db.query(ReverseProxyDB).filter_by(
-     585	        uuid=body.reverse_proxy_uuid).first()
-     586	    if not rp:
-     587	        raise HTTPException(404, "reverse-proxy not found")
-     588	    if db.query(ServiceDB).filter_by(name=body.service).first():
-     589	        raise HTTPException(400, "service already exists")
-     590	    # authorization check
-     591	    if isinstance(caller, ReverseProxyDB) and caller.uuid != body.reverse_proxy_uuid:
-     592	        raise HTTPException(403, "token does not match reverse-proxy")
-     593	    if isinstance(caller, ServiceDiscoveryDB) and caller.reverse_proxy.uuid != body.reverse_proxy_uuid:
-     594	        raise HTTPException(
-     595	            403, "token does not match service-discovery's proxy")
-     596	    svc = ServiceDB(name=body.service,
-     597	                    reverse_proxy_uuid=body.reverse_proxy_uuid)
-     598	    db.add(svc)
-     599	    db.commit()
-     600	    db.refresh(svc)
-     601	    firewall = db.query(FirewallDB).first()
-     602	    if not firewall:
-     603	        db.delete(svc)
-     604	        db.commit()
-     605	        raise HTTPException(400, "no firewall registered yet")
-     606	    try:
-     607	        requests.post(
-     608	            f"{firewall.api_url.rstrip('/')}/aliases",
-     609	            json={"service_name": body.service},
-     610	            headers={"Authorization": f"Bearer {rp.token}"},
-     611	            timeout=TIMEOUT,
-     612	        ).raise_for_status()
-     613	    except Exception as exc:
-     614	        db.delete(svc)
-     615	        db.commit()
-     616	        raise HTTPException(
-     617	            502, f"failed to register alias on firewall: {exc}")
-     618	    return ServiceOut(id=svc.id)
-     619	
-     620	
-     621	@app.delete(
-     622	    "/service/{service_id}",
-     623	)
-     624	def delete_service(
-     625	    service_id: int,
-     626	    caller: ReverseProxyDB = Depends(
-     627	        get_current_actor([ActorRole.REVERSE_PROXY])),
-     628	    db: Session = Depends(get_db),
-     629	) -> None:
-     630	    svc = db.get(ServiceDB, service_id)
-     631	    if not svc:
-     632	        raise HTTPException(404, "service not found")
-     633	    if svc.reverse_proxy_uuid != caller.uuid:
-     634	        raise HTTPException(403, "not authorized to delete this service")
-     635	    db.delete(svc)
-     636	    db.commit()
-     637	    try:
-     638	        requests.delete(
-     639	            f"{caller.api_url.rstrip('/')}/aliases/{svc.name}",
-     640	            headers={"Authorization": f"Bearer {caller.token}"},
-     641	            timeout=TIMEOUT,
-     642	        ).raise_for_status()
-     643	    except Exception as exc:
-     644	        logging.warning(
-     645	            "failed to notify firewall-agent of alias deletion: %s", exc)
-     646	
-     647	# -----------------------------------------------------------------------------
-     648	# Rule endpoints (Firewall only)
-     649	# -----------------------------------------------------------------------------
-     650	
-     651	
-     652	@app.post(
-     653	    "/rules",
-     654	    response_model=RuleOut,
-     655	)
-     656	def create_rule(
-     657	    body: RuleIn,
-     658	    firewall: FirewallDB = Depends(get_current_actor([ActorRole.FIREWALL])),
-     659	    db: Session = Depends(get_db),
-     660	) -> RuleOut:
-     661	    svc = db.query(ServiceDB).filter_by(name=body.service).first()
-     662	    if not svc:
-     663	        raise HTTPException(404, "service not registered")
-     664	    rule = RuleDB(
-     665	        firewall_rule_uuid=body.firewall_rule_uuid,
-     666	        action=body.action,
-     667	        ip=body.ip,
-     668	        service_id=svc.id,
-     669	        firewall_id=firewall.id,
-     670	    )
-     671	    db.add(rule)
-     672	    db.commit()
-     673	    db.refresh(rule)
-     674	    rp = svc.reverse_proxy
-     675	    try:
-     676	        requests.post(
-     677	            f"{rp.api_url.rstrip('/')}/rules/{svc.id}",
-     678	            json={"action": body.action, "ip": body.ip},
-     679	            headers={"Authorization": f"Bearer {rp.token}"},
-     680	            timeout=TIMEOUT,
-     681	        ).raise_for_status()
-     682	    except Exception as exc:
-     683	        logging.warning("forward to proxy failed: %s", exc)
-     684	    return RuleOut(firewall_rule_uuid=body.firewall_rule_uuid)
-     685	
-     686	
-     687	@app.delete(
-     688	    "/rules/{firewall_rule_uuid}",
-     689	)
-     690	def delete_rule(
-     691	    firewall_rule_uuid: str,
-     692	    firewall: FirewallDB = Depends(get_current_actor([ActorRole.FIREWALL])),
-     693	    db: Session = Depends(get_db),
-     694	) -> None:
-     695	    rule = db.query(RuleDB).filter_by(
-     696	        firewall_rule_uuid=firewall_rule_uuid, firewall_id=firewall.id
-     697	    ).first()
-     698	    if not rule:
-     699	        raise HTTPException(404, "rule not found or not yours")
-     700	    svc = rule.service
-     701	    db.delete(rule)
-     702	    db.commit()
-     703	    try:
-     704	        requests.delete(
-     705	            f"{svc.reverse_proxy.api_url.rstrip('/')}/rules/{svc.id}",
-     706	            headers={"Authorization": f"Bearer {svc.reverse_proxy.token}"},
-     707	            timeout=TIMEOUT,
-     708	        ).raise_for_status()
-     709	    except Exception as exc:
-     710	        logging.warning("forward delete failed: %s", exc)
-     711	
-     712	
-     713	# ----------------------------------------------------------------------------
-     714	# Application entrypoint (development)
-     715	# ----------------------------------------------------------------------------
-     716	if __name__ == "__main__":
-     717	    logging.basicConfig(level=logging.INFO)
-     718	    import uvicorn
-     719	    uvicorn.run("core:app", host="0.0.0.0", port=8001, reload=True)
+     263	    payload = json.loads(pr.data) if action == "approve" else None
+     264	    if action == "approve":
+     265	        return _approve(pr, payload, db)
+     266	    return _reject(pr, db)
+
+------------------------------ docker-compose.dev.yml ------------------------------
+       1	# docker-compose.dev.yml
+       2	services:
+       3	  core:
+       4	    build:
+       5	      context: .
+       6	      dockerfile: Dockerfile.dev
+       7	    volumes:
+       8	      - ./core:/app/core
+       9	      - ./data:/app/data
+      10	    env_file:
+      11	      - .env
+      12	    ports:
+      13	      - "$PORT:8000"
+
+------------------------------ docker-compose.prod.yml ------------------------------
+       1	# docker-compose.prod.yml
+       2	
+       3	services:
+       4	  core:
+       5	    build:
+       6	      context: .
+       7	      dockerfile: Dockerfile.prod
+       8	    env_file:
+       9	      - .env
+      10	    ports:
+      11	      - "$PORT:8000"
+      12	    volumes:
+      13	      - ./data:/app/data
+      14	    restart: always
+
+------------------------------ Dockerfile.dev ------------------------------
+       1	# Dockerfile.dev
+       2	FROM python:3.12-slim AS build-env
+       3	
+       4	RUN pip install --no-cache poetry
+       5	
+       6	WORKDIR /app
+       7	
+       8	RUN mkdir -p data
+       9	
+      10	COPY pyproject.toml poetry.lock README.md ./
+      11	
+      12	RUN poetry config virtualenvs.create false \
+      13	&& poetry install --no-root --no-interaction --no-ansi --with dev 
+      14	
+      15	EXPOSE 8000
+      16	
+      17	ENTRYPOINT ["python", "-m", "core.cli"]
+
+------------------------------ Dockerfile.prod ------------------------------
+       1	# Dockerfile.prod
+       2	FROM python:3.12-slim AS build-env
+       3	
+       4	RUN pip install --no-cache poetry
+       5	
+       6	WORKDIR /app
+       7	
+       8	RUN mkdir -p data
+       9	
+      10	COPY core/ ./core/
+      11	COPY pyproject.toml poetry.lock README.md ./
+      12	
+      13	RUN poetry config virtualenvs.create false \
+      14	&& poetry install --no-interaction --no-ansi --only main
+      15	
+      16	RUN pip uninstall poetry -y
+      17	
+      18	FROM python:3.12-slim
+      19	# FROM gcr.io/distroless/python3
+      20	
+      21	WORKDIR /app
+      22	
+      23	COPY --from=build-env /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+      24	COPY --from=build-env /app /app
+      25	ENV PYTHONPATH=/usr/lib/python3.12/site-packages
+      26	
+      27	EXPOSE 8000
+      28	
+      29	ENTRYPOINT ["python", "-m", "core.cli"]
+
+------------------------------ entrypoint.sh ------------------------------
+       1	#!/bin/sh
+       2	
+       3	poetry run core
 
 ------------------------------ .env ------------------------------
-       1	DB_PATH=core.db
-       2	TIMEOUT=15
-       3	ADMIN_TOKEN=admin_token
+       1	ADMIN_TOKEN=admin_token
+       2	PORT=8001
 
 ------------------------------ pyproject.toml ------------------------------
        1	[tool.poetry]
@@ -1430,7 +1345,7 @@
        7	readme = "README.md"
        8	
        9	packages = [
-      10	  { include = "biforch_core" }
+      10	  { include = "core" }
       11	]
       12	
       13	[tool.poetry.dependencies]
@@ -1442,25 +1357,26 @@
       19	pydantic          = "^2.7"
       20	pydantic-settings = "^2.3"
       21	typer = { version = "^0.9.0", extras = ["all"] }
-      22	
-      23	# ---------- Dev dependencies ----------
-      24	[tool.poetry.group.dev.dependencies]
-      25	pytest         = "^8.2"
-      26	pytest-cov     = "^5.0"
-      27	pytest-asyncio = "^0.23"
-      28	httpx          = "^0.27"
-      29	pytest-mock    = "^3.12"
-      30	factory-boy    = "^3.3"
-      31	freezegun      = "^1.4"
-      32	
-      33	# ---------- CLI entry ----------
-      34	[tool.poetry.scripts]
-      35	biforch-core = "biforch_core.cli:app"
-      36	
-      37	# ---------- Build backend ----------
-      38	[build-system]
-      39	requires      = ["poetry-core>=1.8.0"]
-      40	build-backend = "poetry.core.masonry.api"
+      22	click             = "<8.2.0"
+      23	
+      24	# ---------- Dev dependencies ----------
+      25	[tool.poetry.group.dev.dependencies]
+      26	pytest         = "^8.2"
+      27	pytest-cov     = "^5.0"
+      28	pytest-asyncio = "^0.23"
+      29	httpx          = "^0.27"
+      30	pytest-mock    = "^3.12"
+      31	factory-boy    = "^3.3"
+      32	freezegun      = "^1.4"
+      33	
+      34	# ---------- CLI entry ----------
+      35	[tool.poetry.scripts]
+      36	core = "core.cli:app"
+      37	
+      38	# ---------- Build backend ----------
+      39	[build-system]
+      40	requires      = ["poetry-core>=1.8.0"]
+      41	build-backend = "poetry.core.masonry.api"
 
 ------------------------------ README.md ------------------------------
        1	# Biforch Core 服務說明
@@ -1580,8 +1496,8 @@
      115	
      116	| Method | Path                          | 角色       | Request Body                                  | Response                 | 說明                                                    |
      117	| ------ | ----------------------------- | -------- | --------------------------------------------- | ------------------------ | ----------------------------------------------------- |
-     118	| POST   | `/rules`                      | Firewall | `{ firewall_rule_uuid, action, ip, service }` | `{ firewall_rule_uuid }` | 建立新防火牆規則，並轉發到對應 Reverse Proxy 的 `/rules/{service_id}` |
-     119	| DELETE | `/rules/{firewall_rule_uuid}` | Firewall | None                                          | 204                      | 刪除指定 UUID 的防火牆規則，並同步刪除 Reverse Proxy 端規則              |
+     118	| POST   | `/rules`                      | Firewall | `{ firewall_rule_id, action, ip, service }` | `{ firewall_rule_id }` | 建立新防火牆規則，並轉發到對應 Reverse Proxy 的 `/rules/{service_id}` |
+     119	| DELETE | `/rules/{firewall_rule_id}` | Firewall | None                                          | 204                      | 刪除指定 UUID 的防火牆規則，並同步刪除 Reverse Proxy 端規則              |
      120	
      121	---
      122	

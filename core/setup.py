@@ -5,14 +5,14 @@ import time
 import requests
 import sys
 import json
-from config import ADMIN_TOKEN
+from core.config import settings
 
 # Base URL for the Core service
 CORE_URL = "http://localhost:8001"
 
 # Headers including admin token for authorization
 ADMIN_HEADERS = {
-    "Authorization": f"Bearer {ADMIN_TOKEN}",
+    "Authorization": f"Bearer {settings.ADMIN_TOKEN.get_secret_value()}",
     "Content-Type": "application/json",
 }
 

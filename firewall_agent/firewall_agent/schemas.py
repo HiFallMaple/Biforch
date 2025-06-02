@@ -1,8 +1,6 @@
 """Pydantic request / response models shared by API endpoints."""
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validator
 
 
@@ -10,14 +8,14 @@ class ReverseProxyIn(BaseModel):
     uuid: str = Field(..., description="Client‑provided UUID")
     name: str
     ip: IPvAnyAddress
-    ports: List[int] = Field(..., min_length=1)
-    allowed_ips: List[str] = Field(..., min_length=1)
+    ports: list[int] = Field(..., min_length=1)
+    allowed_ips: list[str] = Field(..., min_length=1)
 
     model_config = ConfigDict(from_attributes=True)
 
     @field_validator("ports")
     @classmethod
-    def _port_range(cls, v: List[int]) -> List[int]:
+    def _port_range(cls, v: list[int]) -> list[int]:
         for p in v:
             if not 1 <= p <= 65535:
                 raise ValueError("Port must be between 1‑65535")

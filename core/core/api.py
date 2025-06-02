@@ -1,8 +1,13 @@
-from fastapi import FastAPI, Depends, Body, Request, HTTPException
-from typing import List, Literal
+from fastapi import FastAPI, Depends, Request, HTTPException
+from typing import List
+
+
+from .clients.factory import get_firewall_agent_client
+from .config import logging
 from .dependencies import get_db, get_current_actor, ActorRole
 from .schemas import (
     FirewallIn,
+    PendingApproveIn,
     ReverseProxyIn,
     ServiceDiscoveryIn,
     ServiceIn, ServiceOut,
@@ -80,11 +85,12 @@ def list_pending(
     dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))]
 )
 def patch_pending(
+    body: PendingApproveIn,
     req_id: int,
-    action: Literal["approve", "reject"] = Body(...),
     db=Depends(get_db),
 ) -> PendingApproveOut:
-    status, entity_id = approve_registration(req_id, action, db)
+    logging.debug("pending_registrations debug message")
+    status, entity_id = approve_registration(req_id, body.action, db)
     return PendingApproveOut(
         id=req_id,
         status=status,
@@ -94,36 +100,57 @@ def patch_pending(
 # ------------------------- Service endpoints -------------------------
 
 
-@app.post(
-    "/service", response_model=ServiceOut
-)
+@app.post("/service", response_model=ServiceOut)
 def create_service(
     body: ServiceIn,
-    caller=Depends(get_current_actor([
-        ActorRole.REVERSE_PROXY, ActorRole.SERVICE_DISCOVERY
-    ])),
+    caller=Depends(get_current_actor([ActorRole.REVERSE_PROXY, ActorRole.SERVICE_DISCOVERY])),
     db=Depends(get_db),
 ) -> ServiceOut:
-    # verify reverse-proxy exists
-    rp = db.query(ReverseProxyDB).filter_by(
-        uuid=body.reverse_proxy_uuid
-    ).first()
-    if not rp:
-        raise HTTPException(404, "reverse-proxy not found")
-    # authorization
-    if hasattr(caller, 'uuid') and caller.uuid != body.reverse_proxy_uuid:
-        raise HTTPException(403, "token does not match reverse-proxy")
-    # create service
+    # 1) Verify reverse proxy exists
+    proxy = db.query(ReverseProxyDB).filter_by(uuid=body.reverse_proxy_uuid).first()
+    if not proxy:
+        raise HTTPException(status_code=404, detail="Reverse proxy not found")
+
+    # 2) Authorization
+    if hasattr(caller, "uuid") and caller.uuid != body.reverse_proxy_uuid:
+        raise HTTPException(status_code=403, detail="Token does not match reverse proxy")
+
+    # 3) Ensure service name not duplicated
     if db.query(ServiceDB).filter_by(name=body.service).first():
-        raise HTTPException(400, "service already exists")
-    svc = ServiceDB(
-        name=body.service,
-        reverse_proxy_uuid=body.reverse_proxy_uuid,
-    )
-    db.add(svc)
-    db.commit()
-    db.refresh(svc)
-    return ServiceOut(id=svc.id)
+        raise HTTPException(status_code=400, detail="Service already exists")
+
+    try:
+        # 4) Create Service record but DO NOT commit yet
+        service = ServiceDB(
+            name=body.service,
+            reverse_proxy_uuid=body.reverse_proxy_uuid,
+        )
+        db.add(service)
+        db.flush()  # assign service.id within the current transaction
+
+        # 5) Push to all Firewall Agents
+        firewalls = db.query(FirewallDB).all()
+        for fw in firewalls:
+            client = get_firewall_agent_client(db, fw.uuid)
+            client.create_alias(
+                service_name=service.name,
+            )
+            logging.debug(f"Pushed service '{service.name}' to firewall {fw.uuid}")
+
+        # 6) All pushes succeeded → commit transaction
+        db.commit()
+
+    except Exception as exc:
+        # 7) Any failure → rollback entire transaction (including ServiceDB insert)
+        db.rollback()
+        logging.error(f"Failed to register service on firewall: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Registration to firewall failed: {exc}"
+        )
+
+    # 8) Return newly created Service ID
+    return ServiceOut(id=service.id)
 
 
 @app.delete(
@@ -160,28 +187,28 @@ def create_rule(
         raise HTTPException(404, "service not registered")
     # create rule
     rule = RuleDB(
-        firewall_rule_uuid=body.firewall_rule_uuid,
+        firewall_rule_id=body.firewall_rule_id,
         action=body.action,
-        ip=body.ip,
+        ip=body.src_ip,
         service_id=svc.id,
         firewall_id=firewall.id,
     )
     db.add(rule)
     db.commit()
     db.refresh(rule)
-    return RuleOut(firewall_rule_uuid=rule.firewall_rule_uuid)
+    return RuleOut(firewall_rule_id=rule.firewall_rule_id)
 
 
 @app.delete(
-    "/rules/{firewall_rule_uuid}"
+    "/rules/{firewall_rule_id}"
 )
 def delete_rule(
-    firewall_rule_uuid: str,
+    firewall_rule_id: str,
     firewall=Depends(get_current_actor([ActorRole.FIREWALL])),
     db=Depends(get_db),
 ):
     rule = db.query(RuleDB).filter_by(
-        firewall_rule_uuid=firewall_rule_uuid,
+        firewall_rule_id=firewall_rule_id,
         firewall_id=firewall.id
     ).first()
     if not rule:

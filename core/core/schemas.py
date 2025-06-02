@@ -46,13 +46,13 @@ class ServiceOut(BaseModel):
     id: int
 
 class RuleIn(BaseModel):
-    firewall_rule_uuid: str
+    firewall_rule_id: str
     action: str
-    ip: str
+    src_ip: str
     service: str
 
 class RuleOut(BaseModel):
-    firewall_rule_uuid: str
+    firewall_rule_id: str
 
 class PendingRequestOut(BaseModel):
     request_id: int
@@ -66,6 +66,9 @@ class PendingOut(BaseModel):
     secret: str
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+    
+class PendingApproveIn(BaseModel):
+    action: Literal["approve", "reject"]
 
 class PendingApproveOut(BaseModel):
     id: int

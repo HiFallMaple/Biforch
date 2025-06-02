@@ -115,8 +115,8 @@ Firewall Actor 成功註冊後，使用其 Token 呼叫。
 
 | Method | Path                          | 角色       | Request Body                                  | Response                 | 說明                                                    |
 | ------ | ----------------------------- | -------- | --------------------------------------------- | ------------------------ | ----------------------------------------------------- |
-| POST   | `/rules`                      | Firewall | `{ firewall_rule_uuid, action, ip, service }` | `{ firewall_rule_uuid }` | 建立新防火牆規則，並轉發到對應 Reverse Proxy 的 `/rules/{service_id}` |
-| DELETE | `/rules/{firewall_rule_uuid}` | Firewall | None                                          | 204                      | 刪除指定 UUID 的防火牆規則，並同步刪除 Reverse Proxy 端規則              |
+| POST   | `/rules`                      | Firewall | `{ firewall_rule_id, action, ip, service }` | `{ firewall_rule_id }` | 建立新防火牆規則，並轉發到對應 Reverse Proxy 的 `/rules/{service_id}` |
+| DELETE | `/rules/{firewall_rule_id}` | Firewall | None                                          | 204                      | 刪除指定 UUID 的防火牆規則，並同步刪除 Reverse Proxy 端規則              |
 
 ---
 

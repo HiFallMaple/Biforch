@@ -7,17 +7,16 @@ Provides commands to enqueue registration with Biforch Core
 and to start the API server.
 After registration, stores received UUID and token in local database.
 """
-import logging
 import threading
+from typing import Literal
 
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Dict, Literal, Optional
 
-from .config import settings
 from .clients.core import CoreClient
+from .config import logging, settings
 from .database import SessionLocal  # This is where the session is created
 from .models import AgentCredentials
 
@@ -31,8 +30,8 @@ class RegistrationCallback(BaseModel):
     """
     secret: str
     action: Literal["approve", "reject"]
-    uuid: Optional[str]
-    token: Optional[str]
+    uuid: str | None
+    token: str | None
 
 
 @app.command()
@@ -48,18 +47,18 @@ def init():
         # Check for existing credentials
         existing = db.query(AgentCredentials).first()
         if existing:
-            logging.info(f"🔒 Already registered:")
+            logging.info("🔒 Already registered:")
             logging.info(f"\tUUID: {existing.uuid}")
             logging.info(f"\tToken: {existing.token}")
             return
 
-        callback_data: Dict[str, str] = {}
+        callback_data: dict[str, str] = {}
         event = threading.Event()
 
         # Build temporary FastAPI app for callback
         server_app = FastAPI()
 
-        @server_app.post(settings.CALLBACK_PATH)
+        @server_app.post("/registrations")
         async def receive_callback(body: RegistrationCallback):
             # Validate secret
             if body.secret != callback_data.get("secret"):
@@ -86,7 +85,7 @@ def init():
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
         logging.info(
-            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
+            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}/registrations …"
         )
 
         # Enqueue registration with Core
@@ -114,7 +113,7 @@ def init():
             # Persist credentials in DB
             db.add(AgentCredentials(uuid=uuid_str, token=token_str))
             db.commit()
-            logging.info(f"✅ Registration approved!")
+            logging.info("✅ Registration approved!")
             logging.info(f"\tUUID: {uuid_str}")
             logging.info(f"\tToken: {token_str}")
         else:
@@ -135,6 +134,12 @@ def serve():
         port=settings.INTERNAL_PORT,
         reload=settings.RELOAD,
     )
+    
+
+@app.command("start")
+def start():
+    init()
+    serve()
 
 
 if __name__ == "__main__":

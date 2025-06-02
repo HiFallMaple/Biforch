@@ -1,95 +1,150 @@
 """Business logic – reconcile remote firewall rules with local database and Core."""
 from __future__ import annotations
 
-import logging
-from typing import Dict, List, Tuple
-
 from sqlalchemy.orm import Session
 
-from ..backends import backend
+from ..backends import backend, RuleInfo
 from ..clients.core import CoreClient
-from ..config import settings
-from ..dependencies import get_core_client
+from ..clients.factory import get_core_client
+from ..config import logging
 from ..models import AliasDB, RuleDB
 
 
-def _translate_action(raw_action: str) -> str:
-    """Map raw OPNsense value → Core contract (pass/block)."""
-    return settings.ACTION_MAP.get(raw_action, "block")
+def _collect_remote(db: Session) -> tuple[list[RuleInfo], list[str]]:
+    """Collect remote firewall rule diffs without modifying the database.
 
+    This function queries the firewall backend for all rules, then determines
+    which rules are newly enabled, which are disabled, and which existing rules
+    have changed. It does NOT write to the local database.
 
-def _collect_remote(db: Session) -> Tuple[List[Dict], List[Dict]]:
-    """Fetch remote rules and decide which ones to add/remove locally."""
-    new_rules: List[Dict] = []
-    removed_rules: List[Dict] = []
+    Args:
+        db (Session): SQLAlchemy database session.
 
-    rows = backend.list_rules()
+    Returns:
+        (list[dict], list[dict]): A pair of lists:
+        - new_rules: dicts with keys
+            'firewall_rule_id', 'action', 'ip', 'service'
+        - removed_rules: dicts with key 'firewall_rule_id'
+    """
+    new_rules: list[dict] = []
+    removed_rules: list[dict] = []
 
-    for row in rows:
-        uuid_fw = row["uuid"]
-        enabled = row["enabled"] == "1"
-        details = backend.rule_details(uuid_fw)
+    enabled_rules: dict[str, RuleInfo] = backend.list_rules()
+    # Map remote rules by id
+    enabled_ids: set[str] = set(enabled_rules.keys())
+    # Map local rules by id
+    local_rules = {r.firewall_rule_id: r for r in db.query(RuleDB).all()}
+    local_ids: set[str] = set(local_rules.keys())
 
-        raw_action = next(k for k, v in details["action"].items() if v["selected"] == 1)
-        action = _translate_action(raw_action)
+    # Added rules
+    for rule_id in enabled_ids - local_ids:
+        info = enabled_rules[rule_id]
+        new_rules.append(info)
 
-        src_ip = details["source_net"]
-        dest = details["destination_net"]
-        if not dest.startswith(settings.PREFIX):
-            continue  # not managed by Biforch
-        service_name = dest[len(settings.PREFIX):]
+    # Removed rules
+    for rule_id in local_ids - enabled_ids:
+        removed_rules.append(rule_id)
 
-        alias = db.query(AliasDB).filter_by(service_name=service_name).first()
-        if not alias:
-            continue  # we do not know this service (yet)
-
-        existing = db.query(RuleDB).filter_by(firewall_rule_uuid=uuid_fw).first()
-
-        if enabled and not existing:
-            db.add(
-                RuleDB(
-                    firewall_rule_uuid=uuid_fw,
-                    action=action,
-                    src_ip=src_ip,
-                    dest_alias_id=alias.id,
-                )
-            )
-            new_rules.append({
-                "firewall_rule_uuid": uuid_fw,
-                "action": action,
-                "ip": src_ip,
-                "service": service_name,
-            })
-        elif not enabled and existing:
-            db.delete(existing)
-            removed_rules.append({"firewall_rule_uuid": uuid_fw})
+    # Modified rules: present in both but with changed attributes
+    for rule_id in enabled_ids & local_ids:
+        info: RuleInfo = enabled_rules[rule_id]
+        local = local_rules[rule_id]
+        alias = db.query(AliasDB).get(local.dest_alias_id)
+        local_service = alias.service_name if alias else None
+        if (
+            info.action != local.action or
+            info.src_ip != local.src_ip or
+            info.service != local_service
+        ):
+            # treat modification as removal then addition
+            removed_rules.append(rule_id)
+            new_rules.append(info)
 
     return new_rules, removed_rules
 
 
+def process_rules_change(
+    db: Session,
+    core: CoreClient,
+    new_rules: list[RuleInfo],
+    removed_rules: list[str],
+) -> None:
+    """Apply rule changes to the DB and notify Biforch Core.
+
+    This function writes all new rules into the local database, deletes all
+    removed rules, commits the transaction, and then calls the Core API to
+    reflect these changes.
+
+    Args:
+        db (Session): SQLAlchemy database session.
+        core (CoreClient): Core client instance for rule notifications.
+        new_rules (list[RuleInfo]): List of new rules to add.
+        removed_rules (list[str]): List of rule IDs to remove.
+    """
+    # 1) Update local database
+    # delete first, then insert new ones
+    # This ensures we don't have duplicates if the same rule is edited
+    for rule in removed_rules:
+        db.query(RuleDB).filter_by(
+            firewall_rule_id=rule
+        ).delete()
+
+    for rule in new_rules:
+        alias = db.query(AliasDB).filter_by(
+            service_name=rule.service
+        ).first()
+        db.add(RuleDB(
+            firewall_rule_id=rule.firewall_rule_id,
+            action=rule.action,
+            src_ip=rule.src_ip,
+            dest_alias_id=alias.id,
+        ))
+
+    db.commit()
+    logging.info(
+        "Processed DB changes: +%d / -%d",
+        len(new_rules),
+        len(removed_rules),
+    )
+
+    # 2) Notify Core service
+    # delete first, then insert new ones
+    # This ensures we don't have duplicates if the same rule is edited
+    for rule in removed_rules:
+        try:
+            core.delete_rule(rule)
+        except Exception as exc:
+            logging.warning("Core delete_rule failed: %s", exc)
+
+    for rule in new_rules:
+        try:
+            core.create_rule(
+                firewall_rule_id=rule.firewall_rule_id,
+                action=rule.action,
+                src_ip=rule.src_ip,
+                service=rule.service,
+            )
+        except Exception as exc:
+            logging.warning("Core create_rule failed: %s", exc)
+
+
 def sync_firewall(db: Session) -> None:
-    """High‑level sync: fetch → diff → commit → notify Core."""
-    core: CoreClient = get_core_client(db)
+    """High-level sync: collect diffs then process changes.
+
+    This function is the entry point for both periodic sync and webhook-driven
+    sync. It fetches rule diffs via `_collect_remote` and then delegates
+    to `process_rules_change`.
+
+    Args:
+        db (Session): SQLAlchemy database session.
+    """
+    core = get_core_client(db)
+
     try:
         new_rules, removed_rules = _collect_remote(db)
         if new_rules or removed_rules:
-            db.commit()
-            logging.info("Firewall sync: +%s  -%s", len(new_rules), len(removed_rules))
-            _notify_core(core, new_rules, removed_rules)
-    except Exception as exc:  # noqa: BLE001
+            process_rules_change(db, core, new_rules, removed_rules)
+    except Exception as exc:
         logging.error("Firewall sync failed: %s", exc)
     finally:
         db.close()
-
-
-def _notify_core(core: CoreClient, new_rules: List[Dict], removed_rules: List[Dict]) -> None:
-    for rule in new_rules:
-        try:
-            core.create_rule(**rule)
-        except Exception as exc:  # noqa: BLE001
-            logging.warning("Failed to notify Core (create): %s", exc)
-    for rule in removed_rules:
-        try:
-            core.delete_rule(rule["firewall_rule_uuid"])
-        except Exception as exc:  # noqa: BLE001
-            logging.warning("Failed to notify Core (delete): %s", exc)

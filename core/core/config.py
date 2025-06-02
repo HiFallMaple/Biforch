@@ -123,7 +123,7 @@ LOGGING_CONFIG: dict = {
     "loggers": {
         "": {
             "handlers": ["console", "file"],
-            "level": "INFO",
+            "level": "DEBUG",
             "propagate": False,
         },
     },

@@ -8,7 +8,7 @@ from typing import List
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
 
-from .config import settings
+from .config import settings, logging
 from .models import RuleDB, ServiceDB
 from .schemas import RuleIn, RuleOut
 from .dependencies import get_db
@@ -23,6 +23,7 @@ from .services.sync import sync_to_backend, announce_new_service
 async def lifespan(_: FastAPI):
     Path(settings.CONFIG_DIR).mkdir(parents=True, exist_ok=True)
     db: Session = next(get_db())  
+    logging.info("Checking for new services in %s", settings.CONFIG_DIR)
     try:
         for cfg in Path(settings.CONFIG_DIR).glob("*.conf"):
             svc = cfg.stem

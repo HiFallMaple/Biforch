@@ -370,43 +370,66 @@
       89	    return {"deleted": deleted}
 
 ------------------------------ reverse_proxy_agent/backends/base.py ------------------------------
-       1	"""Common backend interface – every backend must implement ProxyBackend."""
-       2	from typing import Dict, List, Protocol
-       3	
-       4	class ProxyBackend(Protocol):
-       5	    """Abstract reverse-proxy backend API."""
-       6	
-       7	    def apply_rules(self, rules: Dict[str, List[str]]) -> None: ...
-       8	    def add_rule(self, service: str, line: str) -> None: ...
-       9	    def remove_rule(self, service: str, line: str) -> None: ...
-      10	    def reload(self) -> None: ...
+       1	from typing import Any, Dict, List, Protocol, runtime_checkable
+       2	
+       3	# ---------------------------------------------------------------------------
+       4	# Mark the protocol as runtime-checkable so `issubclass` / `isinstance`
+       5	# can be used safely at run time inside the dynamic loader.
+       6	# ---------------------------------------------------------------------------
+       7	@runtime_checkable
+       8	class ProxyBackend(Protocol):
+       9	    """Abstract reverse-proxy backend API that every implementation must follow."""
+      10	
+      11	    # ------------------ bulk sync ------------------
+      12	    def apply_rules(self, rules: Dict[str, List[str]]) -> None: ...
+      13	    def reload(self) -> None: ...
+      14	
+      15	    # ------------------ incremental ops (optional) -
+      16	    def add_rule(self, service: str, line: str) -> None: ...
+      17	    def remove_rule(self, service: str, line: str) -> None: ...
 
 ------------------------------ reverse_proxy_agent/backends/__init__.py ------------------------------
-       1	"""Backend factory + singleton instance."""
-       2	from pathlib import Path
+       1	"""Dynamic backend factory – returns a singleton backend instance."""
+       2	from __future__ import annotations
        3	
-       4	from ..config import settings
-       5	from .base import ProxyBackend
-       6	from .nginx import NginxBackend
+       4	import importlib
+       5	import inspect
+       6	from types import ModuleType
        7	
-       8	__all__ = ["get_backend", "backend"]
-       9	
+       8	from ..config import settings
+       9	from .base import ProxyBackend
       10	
-      11	def get_backend() -> ProxyBackend:
-      12	    """Create backend according to settings.PROXY_BACKEND."""
-      13	    match settings.PROXY_BACKEND:
-      14	        case "nginx":
-      15	            return NginxBackend(Path(settings.CONFIG_DIR))
-      16	        # case "caddy":
-      17	        #     from .caddy import CaddyBackend
-      18	        #     return CaddyBackend(settings.CADDY_API_URL, settings.CADDY_TOKEN)
-      19	        case _:
-      20	            raise RuntimeError(
-      21	                f"Unknown proxy backend: {settings.PROXY_BACKEND}")
-      22	
-      23	
-      24	# Single backend instance reused across the app
-      25	backend: ProxyBackend = get_backend()
+      11	
+      12	# ---------------------------------------------------------------------------
+      13	# Internal helper: load the module `reverse_proxy_agent.backends.<name>`
+      14	# then pick the first class that *subclasses* ProxyBackend.
+      15	# ---------------------------------------------------------------------------
+      16	def _load_backend(name: str) -> ProxyBackend:
+      17	    mod: ModuleType = importlib.import_module(f".{name}", package=__name__)
+      18	
+      19	    # If the backend author exposed a convenient alias `Backend`, prefer it.
+      20	    if hasattr(mod, "Backend"):
+      21	        cls = getattr(mod, "Backend")
+      22	    else:
+      23	        # Otherwise look for *any* subclass of ProxyBackend in that module.
+      24	        candidates = [
+      25	            obj for _, obj in inspect.getmembers(mod, inspect.isclass)
+      26	            if issubclass(obj, ProxyBackend) and obj is not ProxyBackend
+      27	        ]
+      28	        if not candidates:
+      29	            raise ImportError(
+      30	                f"Module '{mod.__name__}' contains no ProxyBackend implementation"
+      31	            )
+      32	        cls = candidates[0]
+      33	
+      34	    return cls()  # type: ignore[return-value]
+      35	
+      36	# ---------------------------------------------------------------------------
+      37	# Singleton instance used across the whole application.
+      38	# ---------------------------------------------------------------------------
+      39	backend: ProxyBackend = _load_backend(settings.PROXY_BACKEND)
+      40	
+      41	__all__ = ["backend"]
 
 ------------------------------ reverse_proxy_agent/backends/nginx.py ------------------------------
        1	"""Nginx backend – write per‑service allow/deny snippets then reload."""
@@ -419,29 +442,30 @@
        8	from typing import Dict, List
        9	
       10	from .base import ProxyBackend
-      11	
-      12	class NginxBackend(ProxyBackend):
-      13	    def __init__(self, config_dir: Path) -> None:
-      14	        self.config_dir = config_dir
-      15	
-      16	    # ------------------------------------------------------------------ sync
-      17	    def apply_rules(self, rules: Dict[str, List[str]]) -> None:
-      18	        os.makedirs(self.config_dir, exist_ok=True)
-      19	        for svc, lines in rules.items():
-      20	            path = self.config_dir / f"{svc}.conf"
-      21	            content = "\n".join(lines) + "\n"
-      22	            if not path.exists() or path.read_text() != content:
-      23	                path.write_text(content)
-      24	        self.reload()
-      25	
-      26	    # ---------------------------------------------------------------- reload
-      27	    def reload(self) -> None:  # pragma: no cover – depends on system Nginx
-      28	        try:
-      29	            subprocess.run(["sudo", "nginx", "-s", "reload"], check=True)
-      30	            logging.info("🔄 Nginx reloaded")
-      31	        except Exception as exc:  # noqa: BLE001
-      32	            logging.error("❌ Failed to reload Nginx: %s", exc)
-      33	            raise
+      11	from ..config import settings
+      12	
+      13	class NginxBackend(ProxyBackend):
+      14	    def __init__(self) -> None:
+      15	        self.config_dir: Path = settings.CONFIG_DIR
+      16	
+      17	    # ------------------------------------------------------------------ sync
+      18	    def apply_rules(self, rules: Dict[str, List[str]]) -> None:
+      19	        os.makedirs(self.config_dir, exist_ok=True)
+      20	        for svc, lines in rules.items():
+      21	            path = self.config_dir / f"{svc}.conf"
+      22	            content = "\n".join(lines) + "\n"
+      23	            if not path.exists() or path.read_text() != content:
+      24	                path.write_text(content)
+      25	        self.reload()
+      26	
+      27	    # ---------------------------------------------------------------- reload
+      28	    def reload(self) -> None:  # pragma: no cover – depends on system Nginx
+      29	        try:
+      30	            subprocess.run(["sudo", "nginx", "-s", "reload"], check=True)
+      31	            logging.info("🔄 Nginx reloaded")
+      32	        except Exception as exc:  # noqa: BLE001
+      33	            logging.error("❌ Failed to reload Nginx: %s", exc)
+      34	            raise
 
 ------------------------------ reverse_proxy_agent/clients/core.py ------------------------------
        1	import logging
@@ -752,7 +776,7 @@
       59	        # Build temporary FastAPI app for callback
       60	        server_app = FastAPI()
       61	
-      62	        @server_app.post(settings.CALLBACK_PATH)
+      62	        @server_app.post("/registrations")
       63	        async def receive_callback(body: RegistrationCallback):
       64	            # Validate secret
       65	            if body.secret != callback_data.get("secret"):
@@ -779,7 +803,7 @@
       86	        thread = threading.Thread(target=server.run, daemon=True)
       87	        thread.start()
       88	        logging.info(
-      89	            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
+      89	            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}/registrations …"
       90	        )
       91	
       92	        # Enqueue registration with Core
@@ -850,7 +874,7 @@
       12	import logging.config
       13	import sys
       14	from pathlib import Path
-      15	from typing import Literal, List
+      15	from typing import List
       16	
       17	from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
       18	from pydantic_settings import BaseSettings
@@ -869,225 +893,229 @@
       31	        REVERSE_PROXY_PORTS: List of ports exposed by the reverse proxy
       32	
       33	        AGENT_NAME: Logical name of this agent
-      34	        CALLBACK_PATH: Endpoint path for Core callbacks
-      35	
-      36	        PROXY_BACKEND: Proxy engine type (nginx, caddy, traefik, haproxy)
-      37	        TIMEOUT: HTTP request timeout (seconds)
-      38	
-      39	        INTERNAL_HOST: Uvicorn bind host
-      40	        INTERNAL_PORT: Uvicorn bind port
-      41	        RELOAD: Enable Uvicorn auto-reload in development
-      42	    """
-      43	    # default put db in data dir
-      44	    DB_PATH: Path = Field(
-      45	        "./data/db.sqlite",
-      46	        description="Path to SQLite database file",
-      47	    )
-      48	    CONFIG_DIR: Path = Field(...,
-      49	                             description="Directory for proxy config snippets")
-      50	
-      51	    # External service URLs
-      52	    CORE_URL: AnyHttpUrl = Field(..., description="Biforch Core service URL")
-      53	    AGENT_URL: AnyHttpUrl = Field(...,
-      54	                                  description="This agent's callback/API URL")
-      55	
-      56	    # Reverse proxy network settings
-      57	    REVERSE_PROXY_IP: str = Field(...,
-      58	                                  description="IP address for reverse proxy to bind")
-      59	    REVERSE_PROXY_PORTS: List[int] = Field(
-      60	        default_factory=list,
-      61	        description="Ports exposed by reverse proxy, as a list or comma-separated string"
-      62	    )
-      63	
-      64	    # Identification
-      65	    AGENT_NAME: str = Field(...,
-      66	                            description="Logical name of the reverse proxy agent")
-      67	    CALLBACK_PATH: str = Field(
-      68	        "/registrations", description="Endpoint path for Core callback"
-      69	    )
-      70	
-      71	    # Proxy backend selection
-      72	    PROXY_BACKEND: Literal["nginx", "caddy", "traefik", "haproxy"] = Field(
-      73	        ..., description="Proxy engine type"
-      74	    )
-      75	
-      76	    # Runtime behavior
-      77	    TIMEOUT: int = Field(..., description="HTTP request timeout in seconds")
-      78	
-      79	    # Server settings
-      80	    INTERNAL_HOST: str = Field(
-      81	        "0.0.0.0", description="Uvicorn bind host"
-      82	    )
-      83	    INTERNAL_PORT: int = Field(
-      84	        8000, description="Uvicorn bind port"
-      85	    )
-      86	    RELOAD: bool = Field(
-      87	        False, description="Enable Uvicorn auto-reload in development"
-      88	    )
-      89	
-      90	    # Logging
-      91	    LOG_FILE_PATH: Path = Field("./data/.log", description="Path to log file")
-      92	
-      93	    # Pydantic model configuration
-      94	    model_config = {
-      95	        "extra": "ignore",
-      96	        "env_file": ".env",
-      97	        "case_sensitive": True,
-      98	    }
-      99	
-     100	    # ---------------------- Validators ----------------------
-     101	    @field_validator("DB_PATH", mode="before")
-     102	    @classmethod
-     103	    def _validate_db_path(cls, v: str | Path) -> Path:
-     104	        path = Path(v)
-     105	        parent = path.parent
-     106	        if not parent.exists():
-     107	            raise ValueError(f"DB_PATH directory does not exist: {parent}")
-     108	        return path
-     109	
-     110	    @field_validator("CONFIG_DIR", mode="before")
-     111	    @classmethod
-     112	    def _validate_config_dir(cls, v: str | Path) -> Path:
-     113	        path = Path(v)
-     114	        if not path.exists():
-     115	            raise ValueError(f"CONFIG_DIR does not exist: {path}")
-     116	        if not path.is_dir():
-     117	            raise ValueError(f"CONFIG_DIR is not a directory: {path}")
-     118	        return path
-     119	
-     120	    @field_validator("REVERSE_PROXY_IP", mode="before")
-     121	    @classmethod
-     122	    def _validate_reverse_proxy_ip(cls, v: str) -> str:
-     123	        import ipaddress
-     124	        try:
-     125	            ipaddress.ip_address(v)
-     126	        except ValueError:
-     127	            raise ValueError(
-     128	                f"REVERSE_PROXY_IP must be a valid IP address: {v}")
-     129	        return v
-     130	
-     131	    @field_validator("REVERSE_PROXY_PORTS", mode="before")
-     132	    @classmethod
-     133	    def _validate_reverse_proxy_ports(cls, v: List[int] | str) -> List[int]:
-     134	        # Accept comma-separated string or list
-     135	        ports: List[int] = []
-     136	        if isinstance(v, str):
-     137	            parts = [p.strip() for p in v.split(",") if p.strip()]
-     138	            for p in parts:
-     139	                try:
-     140	                    num = int(p)
-     141	                except ValueError:
-     142	                    raise ValueError(f"Invalid port value: {p}")
-     143	                ports.append(num)
-     144	        else:
-     145	            ports = v
-     146	        for p in ports:
-     147	            if not (1 <= p <= 65535):
-     148	                raise ValueError(f"Port must be between 1 and 65535: {p}")
-     149	        return ports
-     150	
-     151	    @field_validator("TIMEOUT", mode="before")
-     152	    @classmethod
-     153	    def _validate_timeout(cls, v: int | str) -> int:
-     154	        try:
-     155	            n = int(v)
-     156	        except Exception:
-     157	            raise ValueError("TIMEOUT must be an integer")
-     158	        if n <= 0:
-     159	            raise ValueError("TIMEOUT must be positive")
-     160	        return n
-     161	
-     162	    @field_validator("INTERNAL_HOST", mode="before")
-     163	    @classmethod
-     164	    def _validate_host(cls, v: str) -> str:
-     165	        import ipaddress
-     166	        try:
-     167	            ipaddress.ip_address(v)
-     168	        except ValueError:
-     169	            raise ValueError(f"INTERNAL_HOST must be a valid IP address: {v}")
-     170	        return v
-     171	
-     172	    @field_validator("INTERNAL_PORT", mode="before")
-     173	    @classmethod
-     174	    def _validate_port(cls, v: int | str) -> int:
-     175	        try:
-     176	            port = int(v)
-     177	        except Exception:
-     178	            raise ValueError("INTERNAL_PORT must be an integer")
-     179	        if not (1 <= port <= 65535):
-     180	            raise ValueError("INTERNAL_PORT must be between 1 and 65535")
-     181	        return port
-     182	
-     183	    @field_validator("RELOAD", mode="before")
-     184	    @classmethod
-     185	    def _validate_reload(cls, v: bool | str) -> bool:
-     186	        if isinstance(v, str):
-     187	            val = v.lower()
-     188	            if val in ("true", "1", "yes"):
-     189	                return True
-     190	            if val in ("false", "0", "no"):
-     191	                return False
-     192	            raise ValueError("RELOAD must be a boolean (true/false)")
-     193	        return bool(v)
-     194	
-     195	
-     196	LOGGING_CONFIG: dict = {
-     197	    "version": 1,
-     198	    "disable_existing_loggers": False,
+      34	
+      35	        PROXY_BACKEND: Proxy engine type (nginx, caddy, traefik, haproxy)
+      36	        TIMEOUT: HTTP request timeout (seconds)
+      37	
+      38	        INTERNAL_HOST: Uvicorn bind host
+      39	        INTERNAL_PORT: Uvicorn bind port
+      40	        RELOAD: Enable Uvicorn auto-reload in development
+      41	    """
+      42	    # default put db in data dir
+      43	    DB_PATH: Path = Field("./data/db.sqlite", description="Path to SQLite database file",)
+      44	    CONFIG_DIR: Path = Field(..., description="Directory for proxy config snippets")
+      45	
+      46	    # External service URLs
+      47	    CORE_URL: AnyHttpUrl = Field(..., description="Biforch Core service URL")
+      48	    AGENT_URL: AnyHttpUrl = Field(..., description="This agent's callback/API URL")
+      49	
+      50	    # Reverse proxy network settings
+      51	    REVERSE_PROXY_IP: str = Field(..., description="IP address for reverse proxy to bind")
+      52	    REVERSE_PROXY_PORTS: List[int] = Field(
+      53	        default_factory=list, description="Ports exposed by reverse proxy, as a list or comma-separated string")
+      54	
+      55	    # Identification
+      56	    AGENT_NAME: str = Field(...,
+      57	                            description="Logical name of the reverse proxy agent")
+      58	
+      59	    # Proxy backend selection
+      60	    PROXY_BACKEND: str = Field(..., description="Backend engine module name")
+      61	
+      62	    # Runtime behavior
+      63	    TIMEOUT: int = Field(..., description="HTTP request timeout in seconds")
+      64	
+      65	    # Server settings
+      66	    INTERNAL_HOST: str = Field("0.0.0.0", description="Uvicorn bind host")
+      67	    INTERNAL_PORT: int = Field(8000, description="Uvicorn bind port")
+      68	    RELOAD: bool = Field(False, description="Enable Uvicorn auto-reload in development")
+      69	
+      70	    # Logging
+      71	    LOG_FILE_PATH: Path = Field("./data/.log", description="Path to log file")
+      72	
+      73	    # Pydantic model configuration
+      74	    model_config = {
+      75	        "extra": "ignore",
+      76	        "env_file": ".env",
+      77	        "case_sensitive": True,
+      78	    }
+      79	
+      80	    # ---------------------- Validators ----------------------
+      81	    @field_validator("PROXY_BACKEND", mode="before")
+      82	    @classmethod
+      83	    def _validate_backend_exists(cls, value: str) -> str:
+      84	        """
+      85	        Fail fast if the requested backend does not exist **without importing it**.
+      86	
+      87	        Importing would execute `reverse_proxy_agent.backends.__init__` and pull `settings`
+      88	        a second time, leading to a circular-import error while `Settings()` is still
+      89	        being constructed.  Instead, simply check that the file
+      90	        `<package_root>/backends/<backend>.py` is present.
+      91	        """
+      92	        backend = value.lower()
+      93	
+      94	        # `config.py` itself lives directly in `reverse_proxy_agent`, so this is the package root
+      95	        package_root = Path(__file__).resolve().parent
+      96	        backend_file = package_root / "backends" / f"{backend}.py"
+      97	
+      98	        if not backend_file.is_file():
+      99	            raise ValueError(
+     100	                f"Backend '{backend}' was not found under '{backend_file.parent}'."
+     101	            )
+     102	
+     103	        return backend
+     104	
+     105	    @field_validator("DB_PATH", mode="before")
+     106	    @classmethod
+     107	    def _validate_db_path(cls, v: str | Path) -> Path:
+     108	        path = Path(v)
+     109	        parent = path.parent
+     110	        if not parent.exists():
+     111	            raise ValueError(f"DB_PATH directory does not exist: {parent}")
+     112	        return path
+     113	
+     114	    @field_validator("CONFIG_DIR", mode="before")
+     115	    @classmethod
+     116	    def _validate_config_dir(cls, v: str | Path) -> Path:
+     117	        path = Path(v)
+     118	        if not path.exists():
+     119	            raise ValueError(f"CONFIG_DIR does not exist: {path}")
+     120	        if not path.is_dir():
+     121	            raise ValueError(f"CONFIG_DIR is not a directory: {path}")
+     122	        return path
+     123	
+     124	    @field_validator("REVERSE_PROXY_IP", mode="before")
+     125	    @classmethod
+     126	    def _validate_reverse_proxy_ip(cls, v: str) -> str:
+     127	        import ipaddress
+     128	        try:
+     129	            ipaddress.ip_address(v)
+     130	        except ValueError:
+     131	            raise ValueError(
+     132	                f"REVERSE_PROXY_IP must be a valid IP address: {v}")
+     133	        return v
+     134	
+     135	    @field_validator("REVERSE_PROXY_PORTS", mode="before")
+     136	    @classmethod
+     137	    def _validate_reverse_proxy_ports(cls, v: List[int] | str) -> List[int]:
+     138	        # Accept comma-separated string or list
+     139	        ports: List[int] = []
+     140	        if isinstance(v, str):
+     141	            parts = [p.strip() for p in v.split(",") if p.strip()]
+     142	            for p in parts:
+     143	                try:
+     144	                    num = int(p)
+     145	                except ValueError:
+     146	                    raise ValueError(f"Invalid port value: {p}")
+     147	                ports.append(num)
+     148	        else:
+     149	            ports = v
+     150	        for p in ports:
+     151	            if not (1 <= p <= 65535):
+     152	                raise ValueError(f"Port must be between 1 and 65535: {p}")
+     153	        return ports
+     154	
+     155	    @field_validator("TIMEOUT", mode="before")
+     156	    @classmethod
+     157	    def _validate_timeout(cls, v: int | str) -> int:
+     158	        try:
+     159	            n = int(v)
+     160	        except Exception:
+     161	            raise ValueError("TIMEOUT must be an integer")
+     162	        if n <= 0:
+     163	            raise ValueError("TIMEOUT must be positive")
+     164	        return n
+     165	
+     166	    @field_validator("INTERNAL_HOST", mode="before")
+     167	    @classmethod
+     168	    def _validate_host(cls, v: str) -> str:
+     169	        import ipaddress
+     170	        try:
+     171	            ipaddress.ip_address(v)
+     172	        except ValueError:
+     173	            raise ValueError(f"INTERNAL_HOST must be a valid IP address: {v}")
+     174	        return v
+     175	
+     176	    @field_validator("INTERNAL_PORT", mode="before")
+     177	    @classmethod
+     178	    def _validate_port(cls, v: int | str) -> int:
+     179	        try:
+     180	            port = int(v)
+     181	        except Exception:
+     182	            raise ValueError("INTERNAL_PORT must be an integer")
+     183	        if not (1 <= port <= 65535):
+     184	            raise ValueError("INTERNAL_PORT must be between 1 and 65535")
+     185	        return port
+     186	
+     187	    @field_validator("RELOAD", mode="before")
+     188	    @classmethod
+     189	    def _validate_reload(cls, v: bool | str) -> bool:
+     190	        if isinstance(v, str):
+     191	            val = v.lower()
+     192	            if val in ("true", "1", "yes"):
+     193	                return True
+     194	            if val in ("false", "0", "no"):
+     195	                return False
+     196	            raise ValueError("RELOAD must be a boolean (true/false)")
+     197	        return bool(v)
+     198	
      199	
-     200	    "formatters": {
-     201	        "standard": {
-     202	            "format": "%(asctime)s,%(msecs)03d [%(levelname)s] %(filename)s: %(message)s",
-     203	            "datefmt": "%Y-%m-%d %H:%M:%S",
-     204	        },
-     205	        "colored": {
-     206	            "()": "uvicorn.logging.DefaultFormatter",
-     207	            "fmt": "%(levelprefix)s [%(filename)s:%(lineno)d] [%(asctime)s] %(message)s",
-     208	            "datefmt": "%H:%M:%S",
-     209	            "use_colors": True,
-     210	        },
-     211	    },
-     212	
-     213	    "handlers": {
-     214	        "file": {
-     215	            "class": "logging.FileHandler",
-     216	            "level": "INFO",
-     217	            "formatter": "standard",
-     218	            "filename": ".log",
-     219	            "mode": "a",
-     220	        },
-     221	        "console": {
-     222	            "class": "logging.StreamHandler",
-     223	            "level": "DEBUG",
-     224	            "formatter": "colored",
-     225	            "stream": "ext://sys.stdout",
-     226	        },
-     227	    },
-     228	
-     229	    "loggers": {
-     230	        "": {
-     231	            "handlers": ["console", "file"],
-     232	            "level": "INFO",
-     233	            "propagate": False,
-     234	        },
-     235	    },
-     236	}
-     237	
-     238	
-     239	# Instantiate settings (fails on validation error)
-     240	try:
-     241	    settings = Settings()
-     242	    LOGGING_CONFIG["handlers"]["file"]["filename"] = settings.LOG_FILE_PATH
-     243	    logging.config.dictConfig(LOGGING_CONFIG)
-     244	    logging.info("Settings loaded successfully")
-     245	except ValidationError as exc:
-     246	    logging.error("🚨 Configuration error:\n", exc, file=sys.stderr)
-     247	    sys.exit(1)
-     248	
-     249	
-     250	if __name__ == "__main__":
-     251	    settings_json = settings.model_dump_json(indent=2)
-     252	    logging.info(f"{settings_json}")
+     200	LOGGING_CONFIG: dict = {
+     201	    "version": 1,
+     202	    "disable_existing_loggers": False,
+     203	
+     204	    "formatters": {
+     205	        "standard": {
+     206	            "format": "%(asctime)s,%(msecs)03d [%(levelname)s] %(filename)s: %(message)s",
+     207	            "datefmt": "%Y-%m-%d %H:%M:%S",
+     208	        },
+     209	        "colored": {
+     210	            "()": "uvicorn.logging.DefaultFormatter",
+     211	            "fmt": "%(levelprefix)s [%(filename)s:%(lineno)d] [%(asctime)s] %(message)s",
+     212	            "datefmt": "%H:%M:%S",
+     213	            "use_colors": True,
+     214	        },
+     215	    },
+     216	
+     217	    "handlers": {
+     218	        "file": {
+     219	            "class": "logging.FileHandler",
+     220	            "level": "INFO",
+     221	            "formatter": "standard",
+     222	            "filename": ".log",
+     223	            "mode": "a",
+     224	        },
+     225	        "console": {
+     226	            "class": "logging.StreamHandler",
+     227	            "level": "DEBUG",
+     228	            "formatter": "colored",
+     229	            "stream": "ext://sys.stdout",
+     230	        },
+     231	    },
+     232	
+     233	    "loggers": {
+     234	        "": {
+     235	            "handlers": ["console", "file"],
+     236	            "level": "INFO",
+     237	            "propagate": False,
+     238	        },
+     239	    },
+     240	}
+     241	
+     242	
+     243	# Instantiate settings (fails on validation error)
+     244	try:
+     245	    settings = Settings()
+     246	    LOGGING_CONFIG["handlers"]["file"]["filename"] = settings.LOG_FILE_PATH
+     247	    logging.config.dictConfig(LOGGING_CONFIG)
+     248	    logging.info("Settings loaded successfully")
+     249	except ValidationError as exc:
+     250	    logging.error("🚨 Configuration error:\n", exc, file=sys.stderr)
+     251	    sys.exit(1)
+     252	
+     253	
+     254	if __name__ == "__main__":
+     255	    settings_json = settings.model_dump_json(indent=2)
+     256	    logging.info(f"{settings_json}")
 
 ------------------------------ reverse_proxy_agent/database.py ------------------------------
        1	"""Database bootstrap (engine / session / Base)."""

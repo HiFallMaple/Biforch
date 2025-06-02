@@ -1,6 +1,7 @@
 ============================== PROJECT TREE ==============================
 .
 ├── data
+├── delete_addrgrp.py
 ├── docker-compose.dev.yml
 ├── docker-compose.prod.yml
 ├── Dockerfile.dev
@@ -12,10 +13,13 @@
 │   ├── api.py
 │   ├── backends
 │   │   ├── base.py
+│   │   ├── fortigate.py
 │   │   ├── __init__.py
-│   │   └── opnsense.py
+│   │   ├── opnsense.py
+│   │   └── types.py
 │   ├── clients
-│   │   └── core.py
+│   │   ├── core.py
+│   │   └── factory.py
 │   ├── cli.py
 │   ├── config.py
 │   ├── database.py
@@ -25,14 +29,46 @@
 │   ├── schemas.py
 │   └── services
 │       └── sync.py
+├── get_address_ip.py
+├── new_addrgrp.py
 ├── pyproject.toml
 ├── README.md
+├── rule_details.py
+├── rule.py
 └── tests
     └── test_firewall_agent.py
 
-7 directories, 23 files
+7 directories, 31 files
 
 ============================ FILE CONTENTS ==============================
+------------------------------ delete_addrgrp.py ------------------------------
+       1	import requests
+       2	
+       3	# ---------- config ----------
+       4	API_TOKEN   = "6d735twt9QGctzxqjxps3mqtsGcytr"
+       5	REMOTE_URL  = "https://192.168.87.1"          # FortiGate address
+       6	GROUP_NAME  = "Biforch_openspeedtest"
+       7	VDOM        = "root"                          # change if needed
+       8	
+       9	# ---------- request ----------
+      10	url = f"{REMOTE_URL}/api/v2/cmdb/firewall/addrgrp/{GROUP_NAME}"
+      11	params = {"vdom": VDOM}       # omit if appliance has no VDOMs
+      12	
+      13	headers = {
+      14	    "Authorization": f"Bearer {API_TOKEN}",
+      15	    "Content-Type": "application/json"
+      16	}
+      17	
+      18	try:
+      19	    resp = requests.delete(url, headers=headers, params=params, verify=False)
+      20	    if resp.status_code == 200 and resp.json().get("status") == "success":
+      21	        print(f"✅ Deleted address-group '{GROUP_NAME}' successfully.")
+      22	        print(resp.json())
+      23	    else:
+      24	        print(f"❌ Error {resp.status_code}: {resp.text}")
+      25	except Exception as exc:
+      26	    print(f"❌ Request failed: {exc}")
+
 ------------------------------ docker-compose.dev.yml ------------------------------
        1	# docker-compose.dev.yml
        2	services:
@@ -65,56 +101,53 @@
 
 ------------------------------ Dockerfile.dev ------------------------------
        1	# Dockerfile.dev
-       2	FROM python:3.12-alpine
+       2	FROM python:3.12-slim AS build-env
        3	
-       4	RUN apk add --no-cache --virtual .build-deps \
-       5	      musl-dev \
-       6	      libffi-dev \
-       7	      openssl-dev
-       8	
-       9	RUN pip install --no-cache poetry
-      10	
-      11	WORKDIR /app
-      12	RUN mkdir -p data
-      13	COPY pyproject.toml README.md entrypoint.sh ./
-      14	RUN chmod +x entrypoint.sh
-      15	
-      16	RUN poetry lock \
-      17	&& poetry config virtualenvs.create false \
-      18	&& poetry install --no-root --no-interaction --no-ansi --with dev \
-      19	&& apk del .build-deps 
-      20	
-      21	EXPOSE 8000
-      22	
-      23	CMD ["./entrypoint.sh"]
+       4	RUN pip install --no-cache poetry
+       5	
+       6	WORKDIR /app
+       7	
+       8	RUN mkdir -p data
+       9	
+      10	COPY pyproject.toml poetry.lock README.md ./
+      11	
+      12	RUN poetry config virtualenvs.create false \
+      13	&& poetry install --no-root --no-interaction --no-ansi --with dev 
+      14	
+      15	EXPOSE 8000
+      16	
+      17	ENTRYPOINT ["python", "-m", "firewall_agent.cli", "start"]
 
 ------------------------------ Dockerfile.prod ------------------------------
        1	# Dockerfile.prod
-       2	FROM python:3.12-alpine
+       2	FROM python:3.12-slim AS build-env
        3	
-       4	RUN apk add --no-cache --virtual .build-deps \
-       5	      musl-dev \
-       6	      libffi-dev \
-       7	      openssl-dev
-       8	
-       9	RUN pip install --no-cache poetry
-      10	
-      11	WORKDIR /app
+       4	RUN pip install --no-cache poetry
+       5	
+       6	WORKDIR /app
+       7	
+       8	RUN mkdir -p data
+       9	
+      10	COPY firewall_agent/ ./firewall_agent/
+      11	COPY pyproject.toml poetry.lock README.md ./
       12	
-      13	RUN mkdir -p data
-      14	
-      15	COPY firewall_agent/ ./firewall_agent/
-      16	COPY pyproject.toml README.md entrypoint.sh ./
-      17	RUN chmod +x entrypoint.sh
-      18	
-      19	RUN poetry lock \
-      20	&& poetry config virtualenvs.create false \
-      21	&& poetry install --no-interaction --no-ansi \
-      22	&& apk del .build-deps 
-      23	
-      24	EXPOSE 8000
-      25	
-      26	CMD ["./entrypoint.sh"]
+      13	RUN poetry config virtualenvs.create false \
+      14	&& poetry install --no-interaction --no-ansi --only main
+      15	
+      16	RUN pip uninstall poetry -y
+      17	
+      18	FROM python:3.12-slim
+      19	# FROM gcr.io/distroless/python3
+      20	
+      21	WORKDIR /app
+      22	
+      23	COPY --from=build-env /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+      24	COPY --from=build-env /app /app
+      25	ENV PYTHONPATH=/usr/lib/python3.12/site-packages
+      26	
+      27	EXPOSE 8000
+      28	
+      29	ENTRYPOINT ["python", "-m", "firewall_agent.cli", "start"]
 
 ------------------------------ .dockerignore ------------------------------
        1	__pycache__/
@@ -129,535 +162,995 @@
 
 ------------------------------ .env ------------------------------
        1	PREFIX=Biforch_
-       2	API_KEY=7beKiNep5x7bS8G4Wjqb1G3Sk/6uMs+yH1J9p58cGJSUOf5zGW8qloEcfT4AqR9YMMGASP3Sn0l5Y7gc
-       3	API_SECRET=S8kU5NcxtFkBuAl2PcNv8C+luxsg1CaukIT/uQGU1VGMhf4b0C0ticcRZrsRcDfJSQ7T7ZEghkdpy8E/
-       4	REMOTE_URL=http://192.168.87.1
-       5	CORE_URL=http://192.168.87.10:8001
-       6	AGENT_URL=http://192.168.87.10:8000
-       7	AGENT_NAME=opnsense
-       8	TIMEOUT=15
-       9	PORT=8000
-      10	RELOAD=False
+       2	OPNSENSE_API_KEY=7beKiNep5x7bS8G4Wjqb1G3Sk/6uMs+yH1J9p58cGJSUOf5zGW8qloEcfT4AqR9YMMGASP3Sn0l5Y7gc
+       3	OPNSENSE_API_SECRET=S8kU5NcxtFkBuAl2PcNv8C+luxsg1CaukIT/uQGU1VGMhf4b0C0ticcRZrsRcDfJSQ7T7ZEghkdpy8E/
+       4	FORTIGATE_API_TOKEN=6d735twt9QGctzxqjxps3mqtsGcytr
+       5	FORTIGATE_VDOM=root
+       6	REMOTE_URL=https://192.168.87.1
+       7	CORE_URL=http://192.168.87.10:8001
+       8	AGENT_URL=http://192.168.87.10:8000
+       9	AGENT_NAME=fortigate
+      10	FIREWALL_BACKEND=fortigate
+      11	TIMEOUT=15
+      12	PORT=8000
+      13	RELOAD=False
 
 ------------------------------ firewall_agent/api.py ------------------------------
        1	"""FastAPI entry‑point – contains *only* HTTP concerns."""
        2	from __future__ import annotations
        3	
-       4	import logging
-       5	import threading
-       6	import time
-       7	from contextlib import asynccontextmanager
-       8	from typing import List
+       4	from contextlib import asynccontextmanager
+       5	
+       6	from fastapi import Body, Depends, FastAPI, HTTPException, Request
+       7	from sqlalchemy.orm import Session
+       8	
        9	
-      10	from fastapi import Depends, FastAPI, HTTPException
-      11	from sqlalchemy.orm import Session
-      12	
-      13	from .schemas import (
-      14	    ReverseProxyIn,
-      15	    ReverseProxyOut,
-      16	    AliasIn,
-      17	    AliasOut,
-      18	    RuleOut,
-      19	)
-      20	from .models import ReverseProxyDB, AliasDB, RuleDB
-      21	from .config import settings
-      22	from .dependencies import get_db, get_backend
-      23	from .services.sync import sync_firewall
-      24	
-      25	# ------------------------------------------------------------------ Lifespan
-      26	
+      10	
+      11	from .backends import FirewallBackend
+      12	from .clients.core import CoreClient
+      13	from .clients.factory import get_core_client
+      14	from .config import logging, settings
+      15	from .dependencies import get_backend, get_db
+      16	from .models import AliasDB, ReverseProxyDB, RuleDB
+      17	from .services.sync import process_rules_change
+      18	from .schemas import (
+      19	    AliasIn,
+      20	    AliasOut,
+      21	    ReverseProxyIn,
+      22	    ReverseProxyOut,
+      23	    RuleOut,
+      24	)
+      25	
+      26	# ------------------------------------------------------------------ Lifespan
       27	
-      28	@asynccontextmanager
-      29	async def lifespan(_: FastAPI):
-      30	    """Background thread monitors firewall every 10 s."""
-      31	    stop = threading.Event()
-      32	    db: Session = next(get_db())  # type: ignore[arg-type]
-      33	    def _worker():
-      34	        while not stop.is_set():
-      35	            sync_firewall(db)
-      36	            time.sleep(10)
-      37	
-      38	    thread = threading.Thread(target=_worker, daemon=True)
-      39	    thread.start()
-      40	    try:
-      41	        yield
-      42	    finally:
-      43	        stop.set()
-      44	        thread.join(timeout=1)
-      45	
-      46	
-      47	app = FastAPI(title="Firewall Agent", lifespan=lifespan)
+      28	
+      29	@asynccontextmanager
+      30	async def lifespan(_: FastAPI):
+      31	    """Background thread monitors firewall every 10 s."""
+      32	    # stop = threading.Event()
+      33	    # db: Session = next(get_db())  # type: ignore[arg-type]
+      34	    # def _worker():
+      35	    #     while not stop.is_set():
+      36	    #         sync_firewall(db)
+      37	    #         time.sleep(10)
+      38	
+      39	    # thread = threading.Thread(target=_worker, daemon=True)
+      40	    # thread.start()
+      41	    # try:
+      42	    #     yield
+      43	    # finally:
+      44	    #     stop.set()
+      45	    #     thread.join(timeout=1)
+      46	    yield
+      47	
       48	
-      49	# ---------------------------------------------------------------- Proxies
+      49	app = FastAPI(title="Firewall Agent", lifespan=lifespan)
       50	
-      51	
-      52	@app.post("/reverse_proxies", response_model=ReverseProxyOut)
-      53	def create_reverse_proxy(body: ReverseProxyIn, db: Session = Depends(get_db)) -> ReverseProxyOut:
-      54	    if db.get(ReverseProxyDB, body.uuid):
-      55	        raise HTTPException(400, "uuid already registered")
-      56	    obj = ReverseProxyDB(
-      57	        id=body.uuid,
-      58	        name=body.name,
-      59	        ip=str(body.ip),
-      60	        ports=",".join(map(str, body.ports)),
-      61	        allowed_ips=",".join(body.allowed_ips),
-      62	    )
-      63	    db.add(obj)
-      64	    db.commit()
-      65	    db.refresh(obj)
-      66	    return ReverseProxyOut(id=obj.id)
-      67	
-      68	
-      69	@app.get("/reverse_proxies", response_model=List[ReverseProxyIn])
-      70	def list_reverse_proxies(db: Session = Depends(get_db)) -> List[ReverseProxyIn]:
-      71	    records = db.query(ReverseProxyDB).all()
-      72	    return [
-      73	        ReverseProxyIn(
-      74	            uuid=r.id,
-      75	            name=r.name,
-      76	            ip=r.ip,
-      77	            ports=list(map(int, r.ports.split(","))),
-      78	            allowed_ips=r.allowed_ips.split(","),
-      79	        )
-      80	        for r in records
-      81	    ]
-      82	
-      83	# ----------------------------------------------------------------- Aliases
-      84	
-      85	
-      86	@app.get("/aliases", response_model=List[AliasOut])
-      87	def list_aliases(db: Session = Depends(get_db)) -> List[AliasOut]:
-      88	    aliases = db.query(AliasDB).all()
-      89	    return [AliasOut.model_validate(a) for a in aliases]
-      90	
-      91	
-      92	@app.post("/aliases", response_model=AliasOut)
-      93	def create_alias(body: AliasIn, backend=Depends(get_backend), db: Session = Depends(get_db)) -> AliasOut:  # noqa: E501
-      94	    alias_uuid = backend.create_alias(body.service_name)
-      95	    obj = AliasDB(id=alias_uuid, service_name=body.service_name)
-      96	    db.add(obj)
-      97	    db.commit()
-      98	    return AliasOut(id=obj.id, service_name=obj.service_name)
-      99	
-     100	
-     101	@app.delete("/aliases/{alias_id}")
-     102	def delete_alias(
-     103	    alias_id: str,
-     104	    backend=Depends(get_backend),
-     105	    db: Session = Depends(get_db),
-     106	):
-     107	    """
-     108	    Delete an existing service-alias:
-     109	      1) attempt to delete it on the firewall backend,
-     110	      2) remove it from the local DB.
-     111	    """
-     112	    alias = db.get(AliasDB, alias_id)
-     113	    if not alias:
-     114	        raise HTTPException(404, "alias not found")
+      51	# ---------------------------------------------------------------- Webhook
+      52	
+      53	
+      54	@app.post("/webhooks/rules")
+      55	def webhooks_rules(
+      56	    payload: dict = Body(...),
+      57	    backend: FirewallBackend = Depends(get_backend),
+      58	    db=Depends(get_db),
+      59	):
+      60	    logging.debug(f"Received firewall webhook: {payload}")
+      61	
+      62	    try:
+      63	        news_rules, removed_rules = backend.webhooks_rules(db, payload)
+      64	        logging.debug(f"new_rules: {news_rules}, removed_rules: {removed_rules}")
+      65	        core: CoreClient = get_core_client(db)
+      66	        process_rules_change(db, core, news_rules, removed_rules)
+      67	        logging.info(
+      68	            "Processed webhook: %d new rules, %d removed rules",
+      69	            len(news_rules),
+      70	            len(removed_rules),
+      71	        )
+      72	        pass
+      73	    except Exception as exc:
+      74	        logging.error("Webhook parsing failed: %s", exc, exc_info=True)
+      75	        raise HTTPException(400, f"Invalid webhook payload: {exc}")
+      76	
+      77	    return {"status": "ok"}
+      78	
+      79	# ---------------------------------------------------------------- Proxies
+      80	
+      81	
+      82	@app.post("/reverse_proxies", response_model=ReverseProxyOut)
+      83	def create_reverse_proxy(body: ReverseProxyIn, db: Session = Depends(get_db)) -> ReverseProxyOut:
+      84	    if db.get(ReverseProxyDB, body.uuid):
+      85	        raise HTTPException(400, "uuid already registered")
+      86	    obj = ReverseProxyDB(
+      87	        id=body.uuid,
+      88	        name=body.name,
+      89	        ip=str(body.ip),
+      90	        ports=",".join(map(str, body.ports)),
+      91	        allowed_ips=",".join(body.allowed_ips),
+      92	    )
+      93	    db.add(obj)
+      94	    db.commit()
+      95	    db.refresh(obj)
+      96	    return ReverseProxyOut(id=obj.id)
+      97	
+      98	
+      99	@app.get("/reverse_proxies", response_model=list[ReverseProxyIn])
+     100	def list_reverse_proxies(db: Session = Depends(get_db)) -> list[ReverseProxyIn]:
+     101	    records = db.query(ReverseProxyDB).all()
+     102	    return [
+     103	        ReverseProxyIn(
+     104	            uuid=r.id,
+     105	            name=r.name,
+     106	            ip=r.ip,
+     107	            ports=list(map(int, r.ports.split(","))),
+     108	            allowed_ips=r.allowed_ips.split(","),
+     109	        )
+     110	        for r in records
+     111	    ]
+     112	
+     113	# ----------------------------------------------------------------- Aliases
+     114	
      115	
-     116	    # try to remove it on the external firewall
-     117	    try:
-     118	        if hasattr(backend, "delete_alias"):
-     119	            backend.delete_alias(alias_id)
-     120	        else:
-     121	            # if your backend has a different delete method, call it here
-     122	            pass
-     123	    except Exception as exc:
-     124	        logging.warning("Failed to delete alias on firewall: %s", exc)
-     125	
-     126	    # remove from local database
-     127	    db.delete(alias)
-     128	    db.commit()
-     129	    return {}
+     116	@app.get("/aliases", response_model=list[AliasOut])
+     117	def list_aliases(db: Session = Depends(get_db)) -> list[AliasOut]:
+     118	    aliases = db.query(AliasDB).all()
+     119	    return [AliasOut.model_validate(a) for a in aliases]
+     120	
+     121	
+     122	@app.post("/aliases", response_model=AliasOut)
+     123	def create_alias(body: AliasIn, backend=Depends(get_backend), db: Session = Depends(get_db)) -> AliasOut:  # noqa: E501
+     124	    alias_uuid = backend.create_alias(f"{settings.PREFIX}{body.service_name}")
+     125	    obj = AliasDB(id=alias_uuid, service_name=body.service_name)
+     126	    db.add(obj)
+     127	    db.commit()
+     128	    return AliasOut(id=obj.id, service_name=obj.service_name)
+     129	
      130	
-     131	
-     132	# ------------------------------------------------------------------- Rules
-     133	
-     134	@app.get("/rules", response_model=List[RuleOut])
-     135	def list_rules(db: Session = Depends(get_db)) -> List[RuleOut]:
-     136	    rows = db.query(RuleDB).all()
-     137	    res: List[RuleOut] = []
-     138	    for r in rows:
-     139	        alias = db.get(AliasDB, r.dest_alias_id)
-     140	        res.append(
-     141	            RuleOut(
-     142	                id=r.id,
-     143	                action=r.action,
-     144	                src_ip=r.src_ip,
-     145	                service_name=alias.service_name if alias else None,
-     146	            )
-     147	        )
-     148	    return res
-     149	
-     150	
-     151	
-     152	
+     131	@app.delete("/aliases/{alias_id}")
+     132	def delete_alias(
+     133	    alias_id: str,
+     134	    backend=Depends(get_backend),
+     135	    db: Session = Depends(get_db),
+     136	):
+     137	    """
+     138	    Delete an existing service-alias:
+     139	      1) attempt to delete it on the firewall backend,
+     140	      2) remove it from the local DB.
+     141	    """
+     142	    alias = db.get(AliasDB, alias_id)
+     143	    if not alias:
+     144	        raise HTTPException(404, "alias not found")
+     145	
+     146	    # try to remove it on the external firewall
+     147	    try:
+     148	        if hasattr(backend, "delete_alias"):
+     149	            backend.delete_alias(alias_id)
+     150	        else:
+     151	            # if your backend has a different delete method, call it here
+     152	            pass
+     153	    except Exception as exc:
+     154	        logging.warning("Failed to delete alias on firewall: %s", exc)
+     155	
+     156	    # remove from local database
+     157	    db.delete(alias)
+     158	    db.commit()
+     159	    return {}
+     160	
+     161	
+     162	# ------------------------------------------------------------------- Rules
+     163	
+     164	@app.get("/rules", response_model=list[RuleOut])
+     165	def list_rules(db: Session = Depends(get_db)) -> list[RuleOut]:
+     166	    rows = db.query(RuleDB).all()
+     167	    res: list[RuleOut] = []
+     168	    for r in rows:
+     169	        alias = db.get(AliasDB, r.dest_alias_id)
+     170	        res.append(
+     171	            RuleOut(
+     172	                id=r.id,
+     173	                action=r.action,
+     174	                src_ip=r.src_ip,
+     175	                service_name=alias.service_name if alias else None,
+     176	            )
+     177	        )
+     178	    return res
 
 ------------------------------ firewall_agent/backends/base.py ------------------------------
-       1	from typing import Any, Dict, List, Protocol
+       1	from typing import Any, Protocol, runtime_checkable
        2	
-       3	
-       4	class FirewallBackend(Protocol):
-       5	    """Minimal contract every backend must fulfil."""
+       3	from sqlalchemy.orm import Session
+       4	
+       5	from .types import RuleInfo
        6	
-       7	    # ------------------ Alias management ------------------
-       8	    def create_alias(self, name: str) -> str:
-       9	        ...
-      10	
-      11	    def delete_alias(self, uuid: str) -> None:
-      12	        ...
-      13	
-      14	    # ------------------ Rule management ------------------
-      15	    def list_rules(self) -> List[Dict[str, Any]]:
-      16	        ...
-      17	
-      18	    def rule_details(self, uuid: str) -> Dict[str, Any]:
-      19	        ...
+       7	
+       8	# ---------------------------------------------------------------------------
+       9	# Runtime-checkable protocol so we can safely call `issubclass`/`isinstance`
+      10	# inside `firewall_agent.backends.__init__`.
+      11	# ---------------------------------------------------------------------------
+      12	@runtime_checkable
+      13	class FirewallBackend(Protocol):
+      14	    """Minimal contract every backend implementation must satisfy."""
+      15	
+      16	    # ------------------ Alias management ------------------
+      17	    def create_alias(self, name: str) -> str: ...
+      18	    def delete_alias(self, alias_id: str) -> None: ...
+      19	
+      20	    # ------------------ Rule management ------------------
+      21	    def list_rules(self) -> dict[str, RuleInfo]: ...
+      22	    """
+      23	    List all rules that are currently active.
+      24	    
+      25	    Returns:
+      26	        dict[str, RuleInfo]: A dictionary where each key is a rule_id and the value is a RuleInfo object.    
+      27	    """
+      28	
+      29	    def rule_details(self, rule_id: str) -> RuleInfo | None: ...
+      30	    """
+      31	    Get details of a specific rule by its rule_id.
+      32	        
+      33	    Args:
+      34	        rule_id: The unique identifier of the rule.
+      35	    Returns:
+      36	        RuleInfo: A dictionary containing rule details with keys:
+      37	            - 'rule_id': The unique identifier of the rule.
+      38	            - 'action': The action taken by the rule (e.g., "pass", "reject").
+      39	            - 'src_ip': The source IP address for the rule.
+      40	            - 'service_name': The name of the service associated with the rule.
+      41	    Raises:
+      42	        KeyError: If the rule_id does not exist.
+      43	    """
+      44	
+      45	    # ------------------ Webhook processing ------------------
+      46	    def webhooks_rules(
+      47	        self,
+      48	        db: Session,
+      49	        payload: dict,
+      50	    ) -> tuple[list[RuleInfo], list[str]]:
+      51	        """
+      52	        Process a webhook payload and return rule change diffs.
+      53	
+      54	        Args:
+      55	            db: SQLAlchemy session for database access.
+      56	            payload: Raw HTTP body from the firewall webhook.
+      57	
+      58	        Returns:
+      59	            (list[RuleInfo], list[str]): A pair of lists:
+      60	            - new_rules: List of RuleInfo objects for newly enabled rules.
+      61	            - removed_rules: List of rule IDs for removed rules.
+      62	        """
+      63	        ...
+
+------------------------------ firewall_agent/backends/fortigate.py ------------------------------
+       1	# firewall_agent/backends/fortigate.py
+       2	"""
+       3	FortiGate backend – implements alias / policy CRUD via FortiOS REST API
+       4	Tested on FortiOS 7.4 (token auth).
+       5	
+       6	Env vars required (see config.py):
+       7	    REMOTE_URL      – https://<FG_IP>
+       8	    FORTIGATE_API_TOKEN
+       9	    FORTIGATE_VDOM     – default “root”
+      10	"""
+      11	from __future__ import annotations
+      12	
+      13	import ipaddress
+      14	import json
+      15	from typing import Any
+      16	
+      17	import requests
+      18	from requests import Response
+      19	from sqlalchemy.orm import Session
+      20	
+      21	
+      22	from ..config import logging, settings
+      23	from ..models import AliasDB, RuleDB
+      24	from .base import FirewallBackend
+      25	from .types import RuleInfo
+      26	
+      27	
+      28	class FortiGateBackend(FirewallBackend):
+      29	    """Concrete implementation of :class:`FirewallBackend` for FortiOS >= 7.x."""
+      30	
+      31	    def __init__(self) -> None:
+      32	        self.base = str(settings.REMOTE_URL).rstrip("/")
+      33	        self.vdom = settings.FORTIGATE_VDOM
+      34	        self.hdrs = {
+      35	            "Authorization": f"Bearer {settings.FORTIGATE_API_TOKEN}",
+      36	            "Content-Type": "application/json",
+      37	        }
+      38	        self.params = {"vdom": self.vdom}
+      39	
+      40	    # ---------------------------------------------------------------- helpers
+      41	    def _req(self, method: str, path: str, **kw) -> Response:  # pragma: no cover
+      42	        url = f"{self.base}{path}"
+      43	        kw.setdefault("headers", self.hdrs)
+      44	        kw.setdefault("params", self.params)
+      45	        kw.setdefault("verify", False)  # skip self‑signed certs in labs
+      46	        resp = requests.request(method, url, **kw, timeout=settings.TIMEOUT)
+      47	        if resp.status_code not in (200, 201):
+      48	            logging.error("FortiGate API error %s: %s", resp.status_code, resp.text)
+      49	            resp.raise_for_status()
+      50	        return resp
+      51	    
+      52	    def _get_address_ip(self, address_name: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
+      53	        """
+      54	        Fetch a firewall address object by name and return its subnet in CIDR format.
+      55	        
+      56	        :param address_name: Name of the address object on FortiGate (e.g. 'src_192.168.87.51')
+      57	        :return: Subnet in CIDR notation (e.g. '192.168.87.51/32')
+      58	        :raises RuntimeError: if no address object is found or response is malformed
+      59	        """
+      60	        resp = self._req(
+      61	            "get",
+      62	            f"/api/v2/cmdb/firewall/address/{address_name}"
+      63	        )
+      64	        data: dict[str, Any] = resp.json()
+      65	        results = data.get("results", [])
+      66	        if not results:
+      67	            raise RuntimeError(f"No address object found for '{address_name}'")
+      68	
+      69	        # "subnet" comes as "IP MASK", e.g. "192.168.1.0 255.255.255.0"
+      70	        subnet_str = results[0].get("subnet", "")
+      71	        try:
+      72	            ip_str, mask_str = subnet_str.split()
+      73	        except ValueError:
+      74	            raise RuntimeError(f"Unexpected subnet format for '{address_name}': '{subnet_str}'")
+      75	
+      76	        return ipaddress.ip_network((ip_str, mask_str), strict=False)
+      77	
+      78	    def _to_ruleinfo(self, item: dict) -> RuleInfo | None:
+      79	        """
+      80	        Convert a FortiGate policy item into RuleInfo.
+      81	        - skip if disabled or destination not using our PREFIX
+      82	        - resolve srcaddr object to its subnet and convert to CIDR
+      83	        """
+      84	        # only process enabled rules
+      85	        if item.get("status") != "enable":
+      86	            return None
+      87	
+      88	        # destination address must start with our alias PREFIX
+      89	        dst_name = item["dstaddr"][0]["name"]
+      90	        if not dst_name.startswith(settings.PREFIX):
+      91	            return None
+      92	
+      93	        # extract service name from dstaddr
+      94	        service_name = dst_name[len(settings.PREFIX):]
+      95	
+      96	        src_name = item["srcaddr"][0]["name"]
+      97	        src_ip_cidr = str(self._get_address_ip(src_name))
+      98	
+      99	        # map FortiGate action to our RuleInfo action
+     100	        action = "pass" if item["action"] == "accept" else "block"
+     101	
+     102	        return RuleInfo(
+     103	            firewall_rule_id=str(item["policyid"]),
+     104	            action=action,
+     105	            src_ip=src_ip_cidr,
+     106	            service_name=service_name,
+     107	        )
+     108	
+     109	    @staticmethod
+     110	    def _assert_success(data: dict[str, Any], *, action: str) -> None:  # pragma: no cover
+     111	        """Raise ``RuntimeError`` if the FortiOS payload does not indicate success."""
+     112	        if data.get("status") != "success":
+     113	            raise RuntimeError(f"FortiGate API {action} failed: {data}")
+     114	
+     115	    # ------------------------------------------------------- address‑group CRUD
+     116	    def create_alias(self, name: str) -> str:
+     117	        """Create an *empty* address‑group and return ``name`` as its identifier."""
+     118	        payload = {"name": name, "member": []}
+     119	        resp = self._req("post", "/api/v2/cmdb/firewall/addrgrp", json=payload)
+     120	        data = resp.json()
+     121	        logging.info("FortiGate addrgrp/create response: %s", data)
+     122	        self._assert_success(data, action="create_alias")
+     123	        return name  # use address‑group name as alias_id
+     124	
+     125	    def delete_alias(self, alias_id: str) -> None:
+     126	        """Delete an existing address‑group by its *name* (alias_id)."""
+     127	        resp = self._req("delete", f"/api/v2/cmdb/firewall/addrgrp/{alias_id}")
+     128	        data = resp.json()
+     129	        logging.info("FortiGate addrgrp/delete response: %s", data)
+     130	        self._assert_success(data, action="delete_alias")
+     131	
+     132	    # ------------------------------------------------------------------ policy
+     133	    def create_rule(
+     134	        self,
+     135	        rule_name: str,
+     136	        src_ip: str,
+     137	        dst_group: str,
+     138	        in_if: str = "port2",
+     139	        out_if: str = "port2",
+     140	    ) -> dict[str, Any]:
+     141	        """Create an IPv4 firewall policy that NATs *src_ip → dst_group*.
+     142	
+     143	        Returns the FortiOS JSON payload (validated).
+     144	        """
+     145	        payload = {
+     146	            "name": rule_name,
+     147	            "srcintf": [{"name": in_if}],
+     148	            "dstintf": [{"name": out_if}],
+     149	            "srcaddr": [{"name": src_ip}],
+     150	            "dstaddr": [{"name": dst_group}],
+     151	            "service": [{"name": "ALL"}],
+     152	            "action": "accept",
+     153	            "schedule": "always",
+     154	            "nat": "enable",
+     155	        }
+     156	        resp = self._req("post", "/api/v2/cmdb/firewall/policy", json=payload)
+     157	        data = resp.json()
+     158	        logging.info("FortiGate policy/create response: %s", data)
+     159	        self._assert_success(data, action="create_rule")
+     160	        return data
+     161	
+     162	    def delete_rule(self, policy_id: int) -> None:
+     163	        """Remove a firewall policy (by numeric policy id)."""
+     164	        resp = self._req("delete", f"/api/v2/cmdb/firewall/policy/{policy_id}")
+     165	        data = resp.json()
+     166	        logging.info("FortiGate policy/delete response: %s", data)
+     167	        self._assert_success(data, action="delete_rule")
+     168	
+     169	    # ------------------------------------------------ rules list/details (stub)
+     170	    # These are *not* required by the current agent logic for FortiGate, but we
+     171	    # keep the signature for future parity and raise *clear* runtime errors so
+     172	    # developers notice when they are called.
+     173	    def list_rules(self) -> dict[str, RuleInfo]:
+     174	        """List all rule_id that are currently active."""
+     175	        resp = self._req("get", "/api/v2/cmdb/firewall/policy")
+     176	        resp.raise_for_status()
+     177	        items = resp.json()["results"]
+     178	        rules: dict[str, RuleInfo] = {}
+     179	        logging.debug(f"FortiGate list_rules response: {items}")
+     180	        for item in items:
+     181	            rule = self._to_ruleinfo(item)
+     182	            if rule is None:
+     183	                continue
+     184	            rules[rule["firewall_rule_id"]] = rule
+     185	        logging.debug(f"FortiGate list_rules → {len(rules)} rules")
+     186	        return rules
+     187	                
+     188	
+     189	    def rule_details(self, rule_id: str) -> RuleInfo | None:
+     190	        """
+     191	        Get details of a specific rule by its rule_id.
+     192	
+     193	        Args:
+     194	            rule_id: The unique identifier of the rule.
+     195	        Returns:
+     196	            RuleInfo: A dictionary containing rule details with keys:
+     197	                - 'rule_id': The unique identifier of the rule.
+     198	                - 'action': The action taken by the rule (e.g., "pass", "reject").
+     199	                - 'src_ip': The source IP address for the rule.
+     200	                - 'service_name': The name of the service associated with the rule.
+     201	        Raises:
+     202	            KeyError: If the rule_id does not exist.
+     203	        """
+     204	        resp = self._req("get", f"/api/v2/cmdb/firewall/policy/{rule_id}")
+     205	        resp.raise_for_status()
+     206	        item = resp.json()["results"][0]
+     207	        logging.debug(f"FortiGate rule_details response: {item}")
+     208	
+     209	        return self._to_ruleinfo(item)
+     210	
+     211	    # ------------------ Webhook processing ------------------
+     212	    def webhooks_rules(
+     213	        self,
+     214	        db: Session,
+     215	        payload: dict,
+     216	    ) -> tuple[list[RuleInfo], list[str]]:
+     217	        """
+     218	        Process a FortiGate webhook payload and return rule change diffs.
+     219	
+     220	        Detects additions, removals, and edits (field changes on existing rules).
+     221	        """
+     222	        if payload.get("cfgpath") != "firewall.policy":
+     223	            return [], []
+     224	
+     225	        rule_uuid = payload.get("cfgobj")
+     226	        if not rule_uuid:
+     227	            return [], []
+     228	
+     229	        new_rules: list[RuleInfo] = []
+     230	        removed_rules: list[str] = []
+     231	
+     232	        # current state
+     233	        try:
+     234	            info = self.rule_details(rule_uuid)
+     235	        except Exception as exc:
+     236	            logging.error("Failed to fetch rule details for %s: %s", rule_uuid, exc)
+     237	            return [], []
+     238	
+     239	        # previous state in local DB
+     240	        prev = db.query(RuleDB).filter_by(firewall_rule_id=rule_uuid).first()
+     241	
+     242	        if not info:
+     243	            # rule disabled or removed
+     244	            if prev:
+     245	                removed_rules.append(rule_uuid)
+     246	                return new_rules, removed_rules
+     247	            
+     248	        # rule enabled or added
+     249	        new_rules.append(info)
+     250	        if prev:
+     251	            # existing rule: check for edits
+     252	            alias = db.query(AliasDB).get(prev.dest_alias_id)
+     253	            prev_service = alias.service_name if alias else None
+     254	            if (
+     255	                prev.action != info["action"] or
+     256	                prev.src_ip != info["src_ip"] or
+     257	                prev_service != info["service_name"]
+     258	            ):
+     259	                # treat as update: remove old then add new
+     260	                removed_rules.append(rule_uuid)
+     261	
+     262	        return new_rules, removed_rules
 
 ------------------------------ firewall_agent/backends/__init__.py ------------------------------
        1	"""Backend factory – returns a singleton *firewall backend* according to settings.
        2	Currently only OPNsense is implemented, but the design allows additional engines."""
        3	from __future__ import annotations
        4	
-       5	from .base import FirewallBackend  # type: ignore  (Protocol)
-       6	from .opnsense import OPNsenseBackend
-       7	
-       8	backend: FirewallBackend = OPNsenseBackend()
-       9	
-      10	__all__ = ["backend"]
+       5	import importlib
+       6	import inspect
+       7	from types import ModuleType
+       8	
+       9	from ..config import settings
+      10	from .base import FirewallBackend  # type: ignore
+      11	from .types import RuleInfo  # type: ignore
+      12	
+      13	
+      14	def _load_backend(name: str) -> FirewallBackend:
+      15	    """Return an instance of the requested backend."""
+      16	    mod: ModuleType = importlib.import_module(f".{name}", package=__name__)
+      17	
+      18	    if hasattr(mod, "Backend"):
+      19	        cls = getattr(mod, "Backend")
+      20	    else:
+      21	        candidates = [
+      22	            obj for _, obj in inspect.getmembers(mod, inspect.isclass)
+      23	            if issubclass(obj, FirewallBackend) and obj is not FirewallBackend
+      24	        ]
+      25	        if not candidates:
+      26	            raise ImportError(
+      27	                f"Module '{mod.__name__}' has no subclass of FirewallBackend"
+      28	            )
+      29	        cls = candidates[0]
+      30	
+      31	    return cls()  # type: ignore[return-value]
+      32	
+      33	
+      34	backend: FirewallBackend = _load_backend(settings.FIREWALL_BACKEND)
+      35	
+      36	__all__ = ["backend"]
 
 ------------------------------ firewall_agent/backends/opnsense.py ------------------------------
        1	"""OPNsense backend – wraps REST API calls used by the agent."""
        2	from __future__ import annotations
        3	
-       4	import logging
-       5	from typing import Any, Dict, List
-       6	
-       7	import requests
-       8	
-       9	from ..config import settings
-      10	
-      11	
-      12	class OPNsenseBackend:
-      13	    """Concrete implementation of :class:`FirewallBackend`."""
+       4	from typing import Any
+       5	
+       6	import requests
+       7	from requests import Response
+       8	from sqlalchemy.orm import Session
+       9	
+      10	from ..config import logging, settings
+      11	from .base import FirewallBackend
+      12	from .types import Action, RuleInfo
+      13	
       14	
-      15	    base_url: str = str(settings.REMOTE_URL).rstrip("/")
-      16	    auth: tuple[str, str] = (settings.API_KEY, settings.API_SECRET)
+      15	class OPNsenseBackend(FirewallBackend):
+      16	    """Concrete implementation for the OPNsense firewall engine."""
       17	
-      18	    # ----------------------------------------------------------- Aliases
-      19	    def create_alias(self, name: str) -> str:
-      20	        payload = {
-      21	            "alias": {
-      22	                "enabled": "1",
-      23	                "name": f"{settings.PREFIX}{name}",
-      24	                "type": "host"
-      25	            }
-      26	        }
-      27	        resp = requests.post(
-      28	            f"{self.base_url}/api/firewall/alias/add_item",
-      29	            auth=self.auth,
-      30	            json=payload,
-      31	            timeout=settings.TIMEOUT,
-      32	        )
-      33	        try:
-      34	            data = resp.json()
-      35	            logging.debug(f"OPNsense alias/add_item response JSON: {data}")
-      36	            resp.raise_for_status()
-      37	        except Exception as exc:  # noqa: BLE001
-      38	            logging.error("OPNsense alias create failed: %s", exc)
-      39	            logging.error(f"Error during alias creation: status={resp.status_code}, text={resp.text}")
-      40	            raise
-      41	
-      42	        # Use INFO level so it's visible under default settings
-      43	        logging.info("OPNsense alias response: %s", data)
-      44	
-      45	        # Adjust conditions based on actual API return structure
-      46	        uuid = data.get("uuid") or data.get("alias", {}).get("uuid")
-      47	        if data.get("result") != "saved" or not uuid:
-      48	            msg = f"Unexpected response from OPNsense alias/add_item: {data}"
-      49	            logging.error(msg)
-      50	            raise RuntimeError(msg)
-      51	        return uuid
-      52	
-      53	    def delete_alias(self, uuid: str) -> None:
-      54	        """
-      55	        Delete an existing alias by UUID.
-      56	        Raises an exception if the operation fails.
-      57	        """
-      58	        resp = requests.post(
-      59	            f"{self.base_url}/api/firewall/alias/del_item/{uuid}",
-      60	            auth=self.auth,
-      61	            timeout=settings.TIMEOUT,
-      62	        )
-      63	        resp.raise_for_status()
-      64	
-      65	    # ------------------------------------------------------------ Rules
-      66	    def list_rules(self) -> List[Dict[str, Any]]:
-      67	        resp = requests.get(
-      68	            f"{self.base_url}/api/firewall/filter/search_rule",
-      69	            auth=self.auth,
-      70	            timeout=settings.TIMEOUT,
-      71	        )
-      72	        resp.raise_for_status()
-      73	        return resp.json().get("rows", [])
-      74	
-      75	    def rule_details(self, uuid: str) -> Dict[str, Any]:
-      76	        resp = requests.get(
-      77	            f"{self.base_url}/api/firewall/filter/get_rule/{uuid}",
-      78	            auth=self.auth,
-      79	            timeout=settings.TIMEOUT,
-      80	        )
-      81	        resp.raise_for_status()
-      82	        return resp.json().get("rule", {})
+      18	    def __init__(self) -> None:
+      19	        # Normalise trailing slash to avoid duplicate // when joining paths
+      20	        self.base: str = str(settings.REMOTE_URL).rstrip("/")
+      21	        self.auth: tuple[str, str] = (
+      22	            settings.OPNSENSE_API_KEY,
+      23	            settings.OPNSENSE_API_SECRET,
+      24	        )
+      25	        self.timeout: int = settings.TIMEOUT
+      26	
+      27	    # ---------------------------------------------------------------------
+      28	    # Internal helpers
+      29	    # ---------------------------------------------------------------------
+      30	    def _req(self, method: str, path: str, **kw: Any) -> Response:
+      31	        """Thin wrapper around *requests* with built‑in defaults & HTTP check."""
+      32	        url = f"{self.base}{path}"
+      33	        kw.setdefault("auth", self.auth)
+      34	        kw.setdefault("timeout", self.timeout)
+      35	        # A large share of on‑prem OPNsense boxes are self‑signed; be pragmatic
+      36	        kw.setdefault("verify", False)
+      37	
+      38	        resp = requests.request(method.upper(), url, **kw)
+      39	        if resp.status_code not in (200, 201):
+      40	            logging.error("OPNsense API error %s %s: %s", method.upper(), url, resp.text)
+      41	            resp.raise_for_status()
+      42	        return resp
+      43	
+      44	    @staticmethod
+      45	    def _assert_success(data: dict[str, Any], *, op: str) -> None:
+      46	        """Raise *RuntimeError* if the JSON body does not represent success."""
+      47	        if data.get("result") != "saved":
+      48	            raise RuntimeError(f"OPNsense {op} failed – payload: {data}")
+      49	
+      50	    # ------------------------------------------------------------------ Alias
+      51	    def create_alias(self, name: str) -> str:
+      52	        """Create an address alias and return its UUID (or raise)."""
+      53	        payload = {
+      54	            "alias": {
+      55	                "enabled": "1",
+      56	                "name": name,
+      57	                "type": "host",
+      58	            }
+      59	        }
+      60	        data = self._req("post", "/api/firewall/alias/add_item", json=payload).json()
+      61	        self._assert_success(data, op="create_alias")
+      62	
+      63	        uuid = data.get("uuid") or data.get("alias", {}).get("uuid")
+      64	        if not uuid:
+      65	            raise RuntimeError(f"OPNsense create_alias did not return UUID – payload: {data}")
+      66	
+      67	        logging.info("[opnsense] alias created – name=%s uuid=%s", name, uuid)
+      68	        return uuid
+      69	
+      70	    def delete_alias(self, alias_id: str) -> None:
+      71	        """Delete an existing alias by UUID."""
+      72	        data = self._req("post", f"/api/firewall/alias/del_item/{alias_id}").json()
+      73	        self._assert_success(data, op="delete_alias")
+      74	        logging.info("[opnsense] alias deleted – alias_id=%s", alias_id)
+      75	
+      76	    # ------------------------------------------------------------------ Rules
+      77	    def list_rules(self) -> dict[str, RuleInfo]:
+      78	        """Return the table obtained from */firewall/filter/search_rule*."""
+      79	        data = self._req("get", "/api/firewall/filter/search_rule").json()
+      80	        rows: list[dict[str, Any]] = data.get("rows", [])
+      81	        rules: dict[str, RuleInfo] = dict()
+      82	        for r in rows:
+      83	            if r["enabled"] != "1":
+      84	                logging.debug(f"rule_id: {r['uuid']} is disabled, skipping")
+      85	                continue
+      86	            rule: RuleInfo = self.rule_details(r["uuid"])
+      87	            if rule is not None:
+      88	                rules[r["uuid"]] = rule
+      89	        logging.debug(f"[opnsense] list_rules → {len(rules)} rows")
+      90	        return rules
+      91	
+      92	    def rule_details(self, rule_id: str) -> RuleInfo | None:
+      93	        """Fetch details of a single rule identified by *rule_id*."""
+      94	        data = self._req("get", f"/api/firewall/filter/get_rule/{rule_id}").json()
+      95	        rule: dict[str, Any] = data.get("rule", {})
+      96	        if not rule:
+      97	            raise RuntimeError(f"OPNsense rule_details – no rule for rule_id {rule_id}: {data}")
+      98	        if rule["enabled"] != "1":
+      99	            logging.debug(f"rule_id: {rule_id} is disabled, skipping")
+     100	            return None  # Rule is disabled, return None
+     101	        if not rule["destination_net"].startswith(settings.PREFIX):
+     102	            logging.debug(f"destination_net %s does not start with PREFIX {settings.PREFIX}, skipping")
+     103	            return None  #destination_net is not start with PREFIX, return None
+     104	        
+     105	        action: Action = next(k for k, v in rule["action"].items() if v["selected"])
+     106	        return RuleInfo(
+     107	            uuid=rule_id,
+     108	            action=action,
+     109	            src_ip=rule["source_net"],
+     110	            service_name=rule["destination_net"][len(settings.PREFIX):],
+     111	        )
+     112	
+     113	    def webhooks_rules(
+     114	        self,
+     115	        db: Session,
+     116	        payload: dict,
+     117	    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+     118	        """
+     119	        Not implemented for OPNsense backend.
+     120	
+     121	        Raises:
+     122	            NotImplementedError: always.
+     123	        """
+     124	        raise NotImplementedError(
+     125	            "webhooks_rules() is not implemented for OPNsense backend"
+     126	        )
+
+------------------------------ firewall_agent/backends/types.py ------------------------------
+       1	from typing import Literal, TypedDict
+       2	
+       3	Action = Literal["pass", "reject"]
+       4	
+       5	class RuleInfo(TypedDict):
+       6	    firewall_rule_id: str
+       7	    action: Action
+       8	    src_ip: str
+       9	    service_name: str
 
 ------------------------------ firewall_agent/clients/core.py ------------------------------
-       1	from uuid import UUID
-       2	import requests
-       3	import logging
-       4	from typing import Any, Dict, List, Optional
-       5	from dataclasses import dataclass
-       6	
+       1	from dataclasses import dataclass
+       2	from typing import Any
+       3	
+       4	import requests
+       5	
+       6	from ..config import logging
        7	
-       8	# ---------------------------------------------------------------------
-       9	# Data models
-      10	# ---------------------------------------------------------------------
-      11	@dataclass
-      12	class PendingRequest:
-      13	    request_id: int
-      14	    secret: str
-      15	
+       8	
+       9	# ---------------------------------------------------------------------
+      10	# Data models
+      11	# ---------------------------------------------------------------------
+      12	@dataclass
+      13	class PendingRequest:
+      14	    request_id: int
+      15	    secret: str
       16	
-      17	@dataclass
-      18	class PendingItem:
-      19	    id: int
-      20	    type: str
-      21	    data: str
-      22	    src_ip: str
-      23	    secret: str
-      24	    created_at: str
-      25	
+      17	
+      18	@dataclass
+      19	class PendingItem:
+      20	    id: int
+      21	    type: str
+      22	    data: str
+      23	    src_ip: str
+      24	    secret: str
+      25	    created_at: str
       26	
-      27	@dataclass
-      28	class PendingApprove:
-      29	    id: int
-      30	    status: str
-      31	    entity_id: Optional[int]
-      32	
+      27	
+      28	@dataclass
+      29	class PendingApprove:
+      30	    id: int
+      31	    status: str
+      32	    entity_id: int | None
       33	
-      34	@dataclass
-      35	class Service:
-      36	    id: int
-      37	
+      34	
+      35	@dataclass
+      36	class Service:
+      37	    id: int
       38	
-      39	@dataclass
-      40	class Rule:
-      41	    firewall_rule_uuid: str
-      42	
-      43	# ---------------------------------------------------------------------
-      44	# Client implementation
-      45	# ---------------------------------------------------------------------
-      46	
+      39	
+      40	@dataclass
+      41	class Rule:
+      42	    firewall_rule_id: str
+      43	
+      44	# ---------------------------------------------------------------------
+      45	# Client implementation
+      46	# ---------------------------------------------------------------------
       47	
-      48	class CoreClientError(Exception):
-      49	    """Generic exception for CoreClient errors."""
-      50	    pass
-      51	
+      48	
+      49	class CoreClientError(Exception):
+      50	    """Generic exception for CoreClient errors."""
+      51	    pass
       52	
-      53	class CoreClient:
-      54	    def __init__(
-      55	        self,
-      56	        base_url: str,
-      57	        admin_token: Optional[str] = None,
-      58	        actor_token: Optional[str] = None,
-      59	        timeout: int = 10,
-      60	    ):
-      61	        """
-      62	        :param base_url: URL of Core service (e.g. http://localhost:8001)
-      63	        :param admin_token: Bearer token for admin operations
-      64	        :param actor_token: Bearer token for actor operations (firewall/proxy/discovery)
-      65	        :param timeout: HTTP request timeout in seconds
-      66	        """
-      67	        self.base_url = base_url.rstrip('/')
-      68	        self._admin_token = admin_token
-      69	        self._actor_token = actor_token
-      70	        self.timeout = timeout
-      71	
-      72	    def set_actor_token(self, token: str) -> None:
-      73	        """Set token for actor (firewall/proxy/discovery) calls."""
-      74	        self._actor_token = token
-      75	
-      76	    def _build_headers(self, admin: bool = False) -> Dict[str, str]:
-      77	        headers: Dict[str, str] = {}
-      78	        if admin:
-      79	            if not self._admin_token:
-      80	                raise CoreClientError(
-      81	                    "Admin token is required for this operation")
-      82	            headers['Authorization'] = f"Bearer {self._admin_token}"
-      83	        else:
-      84	            if not self._actor_token:
-      85	                raise CoreClientError(
-      86	                    "Actor token is required for this operation")
-      87	            headers['Authorization'] = f"Bearer {self._actor_token}"
-      88	        return headers
-      89	
-      90	    def _request(
-      91	        self,
-      92	        method: str,
-      93	        path: str,
-      94	        json: Optional[Dict[str, Any]] = None,
-      95	        admin: bool = False,
-      96	        auth: bool = True,
-      97	    ) -> Any:
-      98	        """
-      99	        Internal helper to send HTTP requests to Core.
-     100	
-     101	        :param method: HTTP method
-     102	        :param path: API path (prefixed with base_url)
-     103	        :param json: JSON body
-     104	        :param admin: whether to use admin token
-     105	        :param auth: whether to include Authorization header
-     106	        """
-     107	        url = f"{self.base_url}{path}"
-     108	        headers = self._build_headers(admin=admin) if auth else {}
-     109	        resp = requests.request(
-     110	            method, url, json=json, headers=headers, timeout=self.timeout
-     111	        )
-     112	        try:
-     113	            resp.raise_for_status()
-     114	        except Exception as exc:
-     115	            logging.error(f"HTTP {method} {url} failed: {exc}, {resp.text}")
-     116	            raise CoreClientError(f"{method} {url} failed: {resp.text}")
-     117	        if resp.text:
-     118	            return resp.json()
-     119	        return None
-     120	
-     121	    # -----------------------------------------------------------------
-     122	    # Registration (pending queue) – public endpoints, no auth required
-     123	    # -----------------------------------------------------------------
-     124	    def register_firewall(self, name: str, api_url: str) -> PendingRequest:
-     125	        """Enqueue a firewall registration (returns request_id and secret). No token needed."""
-     126	        data = self._request(
-     127	            'POST',
-     128	            '/firewall',
-     129	            json={'name': name, 'api_url': api_url},
-     130	            admin=False,
-     131	            auth=False,
-     132	        )
-     133	        return PendingRequest(**data)
-     134	
-     135	    def register_reverse_proxy(
-     136	        self, name: str, ip: str, ports: List[int], api_url: str
-     137	    ) -> PendingRequest:
-     138	        """Enqueue a reverse-proxy registration. No token needed."""
-     139	        data = self._request(
-     140	            'POST',
-     141	            '/reverse_proxy',
-     142	            json={'name': name, 'ip': ip, 'ports': ports, 'api_url': api_url},
-     143	            admin=False,
-     144	            auth=False,
-     145	        )
-     146	        return PendingRequest(**data)
-     147	
-     148	    def register_service_discovery(
-     149	        self, name: str, bind_reverse_proxy_id: int, api_url: str
-     150	    ) -> PendingRequest:
-     151	        """Enqueue a service-discovery registration. No token needed."""
-     152	        data = self._request(
-     153	            'POST',
-     154	            '/service_discovery',
-     155	            json={
-     156	                'name': name,
-     157	                'bind_reverse_proxy_id': bind_reverse_proxy_id,
-     158	                'api_url': api_url,
-     159	            },
-     160	            admin=False,
-     161	            auth=False,
-     162	        )
-     163	        return PendingRequest(**data)
-     164	
-     165	    # -----------------------------------------------------------------
-     166	    # Admin: pending operations
-     167	    # -----------------------------------------------------------------
-     168	    def list_pending(self) -> List[PendingItem]:
-     169	        """List all pending registration requests (admin only)."""
-     170	        items = self._request('GET', '/pending_registrations', admin=True)
-     171	        return [PendingItem(**i) for i in items]
-     172	
-     173	    def approve_pending(self, request_id: int) -> PendingApprove:
-     174	        """Approve a pending request by ID (admin only)."""
-     175	        data = self._request(
-     176	            'PATCH',
-     177	            f'/pending_registrations/{request_id}',
-     178	            json={'action': 'approve'},
-     179	            admin=True,
-     180	        )
-     181	        return PendingApprove(**data)
-     182	
-     183	    def reject_pending(self, request_id: int) -> PendingApprove:
-     184	        """Reject a pending request by ID (admin only)."""
-     185	        data = self._request(
-     186	            'PATCH',
-     187	            f'/pending_registrations/{request_id}',
-     188	            json={'action': 'reject'},
-     189	            admin=True,
-     190	        )
-     191	        return PendingApprove(**data)
-     192	
-     193	    # -----------------------------------------------------------------
-     194	    # Admin: delete approved entities
-     195	    # -----------------------------------------------------------------
-     196	    def delete_firewall(self, fw_id: int) -> None:
-     197	        """Delete a registered firewall (admin only)."""
-     198	        self._request('DELETE', f'/firewall/{fw_id}', admin=True)
-     199	
-     200	    def delete_reverse_proxy(self, rp_id: int) -> None:
-     201	        """Delete a registered reverse proxy (admin only)."""
-     202	        self._request('DELETE', f'/reverse_proxy/{rp_id}', admin=True)
-     203	
-     204	    def delete_service_discovery(self, sd_id: int) -> None:
-     205	        """Delete a registered service discovery (admin only)."""
-     206	        self._request('DELETE', f'/service_discovery/{sd_id}', admin=True)
-     207	
-     208	    # -----------------------------------------------------------------
-     209	    # Actor: manage services
-     210	    # -----------------------------------------------------------------
-     211	    def create_service(self, service: str, reverse_proxy_uuid: str) -> Service:
-     212	        """Create a new service (actor token required)."""
-     213	        data = self._request(
-     214	            'POST',
-     215	            '/service',
-     216	            json={'service': service, 'reverse_proxy_uuid': reverse_proxy_uuid},
-     217	            admin=False,
-     218	        )
-     219	        return Service(**data)
-     220	
-     221	    def delete_service(self, service_id: int) -> None:
-     222	        """Delete an existing service (actor token required)."""
-     223	        self._request('DELETE', f'/service/{service_id}', admin=False)
-     224	
-     225	    # -----------------------------------------------------------------
-     226	    # Actor: manage rules (firewall actor)
-     227	    # -----------------------------------------------------------------
-     228	    def create_rule(
-     229	        self, firewall_rule_uuid: str, action: str, ip: str, service: str
-     230	    ) -> Rule:
-     231	        """Create a new firewall rule (firewall actor token required)."""
-     232	        data = self._request(
-     233	            'POST',
-     234	            '/rules',
-     235	            json={
-     236	                'firewall_rule_uuid': firewall_rule_uuid,
-     237	                'action': action,
-     238	                'ip': ip,
-     239	                'service': service,
-     240	            },
-     241	            admin=False,
-     242	        )
-     243	        return Rule(**data)
-     244	
-     245	    def delete_rule(self, firewall_rule_uuid: str) -> None:
-     246	        """Delete a firewall rule (firewall actor token required)."""
-     247	        self._request('DELETE', f'/rules/{firewall_rule_uuid}', admin=False)
+      53	
+      54	class CoreClient:
+      55	    def __init__(
+      56	        self,
+      57	        base_url: str,
+      58	        admin_token: str | None = None,
+      59	        actor_token: str | None = None,
+      60	        timeout: int = 10,
+      61	    ):
+      62	        """
+      63	        :param base_url: URL of Core service (e.g. http://localhost:8001)
+      64	        :param admin_token: Bearer token for admin operations
+      65	        :param actor_token: Bearer token for actor operations (firewall/proxy/discovery)
+      66	        :param timeout: HTTP request timeout in seconds
+      67	        """
+      68	        self.base_url = base_url.rstrip('/')
+      69	        self._admin_token = admin_token
+      70	        self._actor_token = actor_token
+      71	        self.timeout = timeout
+      72	
+      73	    def set_actor_token(self, token: str) -> None:
+      74	        """Set token for actor (firewall/proxy/discovery) calls."""
+      75	        self._actor_token = token
+      76	
+      77	    def _build_headers(self, admin: bool = False) -> dict[str, str]:
+      78	        headers: dict[str, str] = {}
+      79	        if admin:
+      80	            if not self._admin_token:
+      81	                raise CoreClientError(
+      82	                    "Admin token is required for this operation")
+      83	            headers['Authorization'] = f"Bearer {self._admin_token}"
+      84	        else:
+      85	            if not self._actor_token:
+      86	                raise CoreClientError(
+      87	                    "Actor token is required for this operation")
+      88	            headers['Authorization'] = f"Bearer {self._actor_token}"
+      89	        return headers
+      90	
+      91	    def _request(
+      92	        self,
+      93	        method: str,
+      94	        path: str,
+      95	        json: dict[str, Any] | None = None,
+      96	        admin: bool = False,
+      97	        auth: bool = True,
+      98	    ) -> Any:
+      99	        """
+     100	        Internal helper to send HTTP requests to Core.
+     101	
+     102	        :param method: HTTP method
+     103	        :param path: API path (prefixed with base_url)
+     104	        :param json: JSON body
+     105	        :param admin: whether to use admin token
+     106	        :param auth: whether to include Authorization header
+     107	        """
+     108	        url = f"{self.base_url}{path}"
+     109	        headers = self._build_headers(admin=admin) if auth else {}
+     110	        resp = requests.request(
+     111	            method, url, json=json, headers=headers, timeout=self.timeout
+     112	        )
+     113	        try:
+     114	            resp.raise_for_status()
+     115	        except Exception as exc:
+     116	            logging.error(f"HTTP {method} {url} failed: {exc}, {resp.text}")
+     117	            raise CoreClientError(f"{method} {url} failed: {resp.text}")
+     118	        if resp.text:
+     119	            return resp.json()
+     120	        return None
+     121	
+     122	    # -----------------------------------------------------------------
+     123	    # Registration (pending queue) – public endpoints, no auth required
+     124	    # -----------------------------------------------------------------
+     125	    def register_firewall(self, name: str, api_url: str) -> PendingRequest:
+     126	        """Enqueue a firewall registration (returns request_id and secret). No token needed."""
+     127	        data = self._request(
+     128	            'POST',
+     129	            '/firewall',
+     130	            json={'name': name, 'api_url': api_url},
+     131	            admin=False,
+     132	            auth=False,
+     133	        )
+     134	        return PendingRequest(**data)
+     135	
+     136	    def register_reverse_proxy(
+     137	        self, name: str, ip: str, ports: list[int], api_url: str
+     138	    ) -> PendingRequest:
+     139	        """Enqueue a reverse-proxy registration. No token needed."""
+     140	        data = self._request(
+     141	            'POST',
+     142	            '/reverse_proxy',
+     143	            json={'name': name, 'ip': ip, 'ports': ports, 'api_url': api_url},
+     144	            admin=False,
+     145	            auth=False,
+     146	        )
+     147	        return PendingRequest(**data)
+     148	
+     149	    def register_service_discovery(
+     150	        self, name: str, bind_reverse_proxy_id: int, api_url: str
+     151	    ) -> PendingRequest:
+     152	        """Enqueue a service-discovery registration. No token needed."""
+     153	        data = self._request(
+     154	            'POST',
+     155	            '/service_discovery',
+     156	            json={
+     157	                'name': name,
+     158	                'bind_reverse_proxy_id': bind_reverse_proxy_id,
+     159	                'api_url': api_url,
+     160	            },
+     161	            admin=False,
+     162	            auth=False,
+     163	        )
+     164	        return PendingRequest(**data)
+     165	
+     166	    # -----------------------------------------------------------------
+     167	    # Admin: pending operations
+     168	    # -----------------------------------------------------------------
+     169	    def list_pending(self) -> list[PendingItem]:
+     170	        """List all pending registration requests (admin only)."""
+     171	        items = self._request('GET', '/pending_registrations', admin=True)
+     172	        return [PendingItem(**i) for i in items]
+     173	
+     174	    def approve_pending(self, request_id: int) -> PendingApprove:
+     175	        """Approve a pending request by ID (admin only)."""
+     176	        data = self._request(
+     177	            'PATCH',
+     178	            f'/pending_registrations/{request_id}',
+     179	            json={'action': 'approve'},
+     180	            admin=True,
+     181	        )
+     182	        return PendingApprove(**data)
+     183	
+     184	    def reject_pending(self, request_id: int) -> PendingApprove:
+     185	        """Reject a pending request by ID (admin only)."""
+     186	        data = self._request(
+     187	            'PATCH',
+     188	            f'/pending_registrations/{request_id}',
+     189	            json={'action': 'reject'},
+     190	            admin=True,
+     191	        )
+     192	        return PendingApprove(**data)
+     193	
+     194	    # -----------------------------------------------------------------
+     195	    # Admin: delete approved entities
+     196	    # -----------------------------------------------------------------
+     197	    def delete_firewall(self, fw_id: int) -> None:
+     198	        """Delete a registered firewall (admin only)."""
+     199	        self._request('DELETE', f'/firewall/{fw_id}', admin=True)
+     200	
+     201	    def delete_reverse_proxy(self, rp_id: int) -> None:
+     202	        """Delete a registered reverse proxy (admin only)."""
+     203	        self._request('DELETE', f'/reverse_proxy/{rp_id}', admin=True)
+     204	
+     205	    def delete_service_discovery(self, sd_id: int) -> None:
+     206	        """Delete a registered service discovery (admin only)."""
+     207	        self._request('DELETE', f'/service_discovery/{sd_id}', admin=True)
+     208	
+     209	    # -----------------------------------------------------------------
+     210	    # Actor: manage services
+     211	    # -----------------------------------------------------------------
+     212	    def create_service(self, service: str, reverse_proxy_uuid: str) -> Service:
+     213	        """Create a new service (actor token required)."""
+     214	        data = self._request(
+     215	            'POST',
+     216	            '/service',
+     217	            json={'service': service, 'reverse_proxy_uuid': reverse_proxy_uuid},
+     218	            admin=False,
+     219	        )
+     220	        return Service(**data)
+     221	
+     222	    def delete_service(self, service_id: int) -> None:
+     223	        """Delete an existing service (actor token required)."""
+     224	        self._request('DELETE', f'/service/{service_id}', admin=False)
+     225	
+     226	    # -----------------------------------------------------------------
+     227	    # Actor: manage rules (firewall actor)
+     228	    # -----------------------------------------------------------------
+     229	    def create_rule(
+     230	        self, firewall_rule_id: str, action: str, ip: str, service: str
+     231	    ) -> Rule:
+     232	        """Create a new firewall rule (firewall actor token required)."""
+     233	        data = self._request(
+     234	            'POST',
+     235	            '/rules',
+     236	            json={
+     237	                'firewall_rule_id': firewall_rule_id,
+     238	                'action': action,
+     239	                'ip': ip,
+     240	                'service': service,
+     241	            },
+     242	            admin=False,
+     243	        )
+     244	        return Rule(**data)
+     245	
+     246	    def delete_rule(self, firewall_rule_id: str) -> None:
+     247	        """Delete a firewall rule (firewall actor token required)."""
+     248	        self._request('DELETE', f'/rules/{firewall_rule_id}', admin=False)
+
+------------------------------ firewall_agent/clients/factory.py ------------------------------
+       1	from fastapi import HTTPException
+       2	from sqlalchemy.orm import Session
+       3	
+       4	from ..config import settings
+       5	from ..models import AgentCredentials
+       6	from .core import CoreClient
+       7	
+       8	# module-level caches for singletons
+       9	_core_client: CoreClient = None
+      10	
+      11	
+      12	def get_core_client(db: Session) -> CoreClient:
+      13	    """
+      14	    Create a CoreClient using the stored actor token from the database.
+      15	    Raises HTTPException if no token is available.
+      16	
+      17	    Args:
+      18	        db (Session): The SQLAlchemy session to retrieve credentials.
+      19	
+      20	    Returns:
+      21	        CoreClient: The CoreClient instance initialized with the actor token.
+      22	
+      23	    Raises:
+      24	        HTTPException: If no token is found for the agent in the database.
+      25	    """
+      26	
+      27	    # Retrieve the agent's credentials from the local database
+      28	    cred: AgentCredentials | None = db.query(AgentCredentials).first()
+      29	    token: str | None = cred.token if cred else None
+      30	    global _core_client
+      31	
+      32	    if not token:
+      33	        raise HTTPException(
+      34	            status_code=500, detail="Missing actor token: please register the agent first.")
+      35	    
+      36	    if _core_client is None:
+      37	        _core_client = CoreClient(base_url=str(settings.CORE_URL), actor_token=token)
+      38	
+      39	    return _core_client
 
 ------------------------------ firewall_agent/cli.py ------------------------------
        1	#!/usr/bin/env python3
@@ -669,138 +1162,143 @@
        7	and to start the API server.
        8	After registration, stores received UUID and token in local database.
        9	"""
-      10	import logging
-      11	import threading
+      10	import threading
+      11	from typing import Literal
       12	
       13	import typer
       14	import uvicorn
       15	from fastapi import FastAPI, HTTPException
       16	from pydantic import BaseModel
-      17	from typing import Dict, Literal, Optional
-      18	
-      19	from .config import settings
-      20	from .clients.core import CoreClient
-      21	from .database import SessionLocal  # This is where the session is created
-      22	from .models import AgentCredentials
-      23	
-      24	app = typer.Typer(help="Biforch Firewall Agent CLI")
+      17	
+      18	from .clients.core import CoreClient
+      19	from .config import logging, settings
+      20	from .database import SessionLocal  # This is where the session is created
+      21	from .models import AgentCredentials
+      22	
+      23	app = typer.Typer(help="Biforch Firewall Agent CLI")
+      24	
       25	
-      26	
-      27	class RegistrationCallback(BaseModel):
-      28	    """
-      29	    Model for Core's callback payload.
-      30	    Core will POST {"secret": "...", "action": "approve|reject", "uuid": "...", "token": "..."}.
-      31	    """
-      32	    secret: str
-      33	    action: Literal["approve", "reject"]
-      34	    uuid: Optional[str]
-      35	    token: Optional[str]
+      26	class RegistrationCallback(BaseModel):
+      27	    """
+      28	    Model for Core's callback payload.
+      29	    Core will POST {"secret": "...", "action": "approve|reject", "uuid": "...", "token": "..."}.
+      30	    """
+      31	    secret: str
+      32	    action: Literal["approve", "reject"]
+      33	    uuid: str | None
+      34	    token: str | None
+      35	
       36	
-      37	
-      38	@app.command()
-      39	def init():
-      40	    """
-      41	    1) If already registered, report existing credentials and exit.
-      42	    2) Launch temporary FastAPI server to receive Core's callback.
-      43	    3) Enqueue a firewall registration request to Core (using settings.CORE_URL).
-      44	    4) Block until Core calls back, then store credentials & exit.
-      45	    """
-      46	    db = SessionLocal()  # This is where we manually create the session
-      47	    try:
-      48	        # Check for existing credentials
-      49	        existing = db.query(AgentCredentials).first()
-      50	        if existing:
-      51	            logging.info(f"🔒 Already registered:")
-      52	            logging.info(f"\tUUID: {existing.uuid}")
-      53	            logging.info(f"\tToken: {existing.token}")
-      54	            return
-      55	
-      56	        callback_data: Dict[str, str] = {}
-      57	        event = threading.Event()
-      58	
-      59	        # Build temporary FastAPI app for callback
-      60	        server_app = FastAPI()
-      61	
-      62	        @server_app.post(settings.CALLBACK_PATH)
-      63	        async def receive_callback(body: RegistrationCallback):
-      64	            # Validate secret
-      65	            if body.secret != callback_data.get("secret"):
-      66	                raise HTTPException(400, "Invalid secret")
-      67	            callback_data["action"] = body.action
-      68	            # On approval, capture uuid and token
-      69	            if body.action == "approve":
-      70	                callback_data["uuid"] = body.uuid or ""
-      71	                callback_data["token"] = body.token or ""
-      72	            # Signal shutdown and notifying main thread
-      73	            server.should_exit = True
-      74	            event.set()
-      75	            return {"status": "received"}
-      76	
-      77	        # Start Uvicorn server in background
-      78	        config = uvicorn.Config(
-      79	            server_app,
-      80	            host=settings.INTERNAL_HOST,
-      81	            port=settings.INTERNAL_PORT,
-      82	            log_level="info",
-      83	            lifespan="on"
-      84	        )
-      85	        server = uvicorn.Server(config)
-      86	        thread = threading.Thread(target=server.run, daemon=True)
-      87	        thread.start()
-      88	        logging.info(
-      89	            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
-      90	        )
-      91	
-      92	        # Enqueue registration with Core
-      93	        client = CoreClient(base_url=str(settings.CORE_URL))
-      94	        pending = client.register_firewall(
-      95	            name=settings.AGENT_NAME,
-      96	            api_url=str(settings.AGENT_URL),
-      97	        )
-      98	        callback_data["secret"] = pending.secret
-      99	        logging.info(
-     100	            f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
-     101	        )
-     102	
-     103	        # Block until callback arrives
-     104	        event.wait()
-     105	
-     106	        # Shutdown server thread
-     107	        thread.join(timeout=1)
-     108	
-     109	        # Report and store result
-     110	        action = callback_data.get("action")
-     111	        if action == "approve":
-     112	            uuid_str = callback_data.get("uuid", "")
-     113	            token_str = callback_data.get("token", "")
-     114	            # Persist credentials in DB
-     115	            db.add(AgentCredentials(uuid=uuid_str, token=token_str))
-     116	            db.commit()
-     117	            logging.info(f"✅ Registration approved!")
-     118	            logging.info(f"\tUUID: {uuid_str}")
-     119	            logging.info(f"\tToken: {token_str}")
-     120	        else:
-     121	            logging.error("❌ Registration was rejected by Core")
-     122	    finally:
-     123	        db.close()  # Close the session after usage
+      37	@app.command()
+      38	def init():
+      39	    """
+      40	    1) If already registered, report existing credentials and exit.
+      41	    2) Launch temporary FastAPI server to receive Core's callback.
+      42	    3) Enqueue a firewall registration request to Core (using settings.CORE_URL).
+      43	    4) Block until Core calls back, then store credentials & exit.
+      44	    """
+      45	    db = SessionLocal()  # This is where we manually create the session
+      46	    try:
+      47	        # Check for existing credentials
+      48	        existing = db.query(AgentCredentials).first()
+      49	        if existing:
+      50	            logging.info("🔒 Already registered:")
+      51	            logging.info(f"\tUUID: {existing.uuid}")
+      52	            logging.info(f"\tToken: {existing.token}")
+      53	            return
+      54	
+      55	        callback_data: dict[str, str] = {}
+      56	        event = threading.Event()
+      57	
+      58	        # Build temporary FastAPI app for callback
+      59	        server_app = FastAPI()
+      60	
+      61	        @server_app.post("/registrations")
+      62	        async def receive_callback(body: RegistrationCallback):
+      63	            # Validate secret
+      64	            if body.secret != callback_data.get("secret"):
+      65	                raise HTTPException(400, "Invalid secret")
+      66	            callback_data["action"] = body.action
+      67	            # On approval, capture uuid and token
+      68	            if body.action == "approve":
+      69	                callback_data["uuid"] = body.uuid or ""
+      70	                callback_data["token"] = body.token or ""
+      71	            # Signal shutdown and notifying main thread
+      72	            server.should_exit = True
+      73	            event.set()
+      74	            return {"status": "received"}
+      75	
+      76	        # Start Uvicorn server in background
+      77	        config = uvicorn.Config(
+      78	            server_app,
+      79	            host=settings.INTERNAL_HOST,
+      80	            port=settings.INTERNAL_PORT,
+      81	            log_level="info",
+      82	            lifespan="on"
+      83	        )
+      84	        server = uvicorn.Server(config)
+      85	        thread = threading.Thread(target=server.run, daemon=True)
+      86	        thread.start()
+      87	        logging.info(
+      88	            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}/registrations …"
+      89	        )
+      90	
+      91	        # Enqueue registration with Core
+      92	        client = CoreClient(base_url=str(settings.CORE_URL))
+      93	        pending = client.register_firewall(
+      94	            name=settings.AGENT_NAME,
+      95	            api_url=str(settings.AGENT_URL),
+      96	        )
+      97	        callback_data["secret"] = pending.secret
+      98	        logging.info(
+      99	            f"📨 Sent registration → request_id={pending.request_id}, secret={pending.secret}"
+     100	        )
+     101	
+     102	        # Block until callback arrives
+     103	        event.wait()
+     104	
+     105	        # Shutdown server thread
+     106	        thread.join(timeout=1)
+     107	
+     108	        # Report and store result
+     109	        action = callback_data.get("action")
+     110	        if action == "approve":
+     111	            uuid_str = callback_data.get("uuid", "")
+     112	            token_str = callback_data.get("token", "")
+     113	            # Persist credentials in DB
+     114	            db.add(AgentCredentials(uuid=uuid_str, token=token_str))
+     115	            db.commit()
+     116	            logging.info("✅ Registration approved!")
+     117	            logging.info(f"\tUUID: {uuid_str}")
+     118	            logging.info(f"\tToken: {token_str}")
+     119	        else:
+     120	            logging.error("❌ Registration was rejected by Core")
+     121	    finally:
+     122	        db.close()  # Close the session after usage
+     123	
      124	
-     125	
-     126	@app.command()
-     127	def serve():
-     128	    """
-     129	    Start the Biforch Firewall Agent API server
-     130	    (which runs background syncs, etc.).
-     131	    """
-     132	    uvicorn.run(
-     133	        f"{__package__}.api:app",
-     134	        host=settings.INTERNAL_HOST,
-     135	        port=settings.INTERNAL_PORT,
-     136	        reload=settings.RELOAD,
-     137	    )
+     125	@app.command()
+     126	def serve():
+     127	    """
+     128	    Start the Biforch Firewall Agent API server
+     129	    (which runs background syncs, etc.).
+     130	    """
+     131	    uvicorn.run(
+     132	        f"{__package__}.api:app",
+     133	        host=settings.INTERNAL_HOST,
+     134	        port=settings.INTERNAL_PORT,
+     135	        reload=settings.RELOAD,
+     136	    )
+     137	    
      138	
-     139	
-     140	if __name__ == "__main__":
-     141	    app()
+     139	@app.command("start")
+     140	def start():
+     141	    init()
+     142	    serve()
+     143	
+     144	
+     145	if __name__ == "__main__":
+     146	    app()
 
 ------------------------------ firewall_agent/config.py ------------------------------
        1	from __future__ import annotations
@@ -810,206 +1308,203 @@
        5	import logging.config
        6	import sys
        7	from pathlib import Path
-       8	from typing import Dict
-       9	
-      10	from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
-      11	from pydantic_settings import BaseSettings
+       8	
+       9	from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+      10	from pydantic_settings import BaseSettings
+      11	
       12	
-      13	
-      14	class Settings(BaseSettings):
-      15	    """
-      16	    Application settings for Biforch Firewall Agent.
-      17	
-      18	    - Loads settings from environment variables via pydantic-settings
-      19	    - Validates values on startup (fails fast)
-      20	    """
-      21	    # External service URLs
+      13	class Settings(BaseSettings):
+      14	    """
+      15	    Application settings for Biforch Firewall Agent.
+      16	
+      17	    - Loads settings from environment variables via pydantic-settings
+      18	    - Validates values on startup (fails fast)
+      19	    """
+      20	
+      21	    # ---------- External service URLs ----------
       22	    CORE_URL: AnyHttpUrl = Field(..., description="URL of Biforch Core service")
-      23	    REMOTE_URL: AnyHttpUrl = Field(..., description="Base URL of OPNsense firewall")
+      23	    REMOTE_URL: AnyHttpUrl = Field(..., description="Base URL of firewall backend")
       24	    AGENT_URL: AnyHttpUrl = Field(..., description="Callback/API URL of this agent")
       25	
-      26	    # Firewall authentication
-      27	    API_KEY: str = Field(..., description="OPNsense API key")
-      28	    API_SECRET: str = Field(..., description="OPNsense API secret")
+      26	    # ---------- OPNsense ----------
+      27	    OPNSENSE_API_KEY: str = Field(..., description="OPNsense API key")
+      28	    OPNSENSE_API_SECRET: str = Field(..., description="OPNsense API secret")
       29	
-      30	    # Alias configuration
-      31	    PREFIX: str = Field(
-      32	        "Biforch_",
-      33	        min_length=1,
-      34	        description="Prefix for OPNsense aliases"
-      35	    )
-      36	    AGENT_NAME: str = Field(..., description="Logical name of this agent")
-      37	    CALLBACK_PATH: str = Field(
-      38	        "/registrations",
-      39	        description="Core callback endpoint path"
-      40	    )
-      41	
-      42	    # Runtime behavior
-      43	    TIMEOUT: int = Field(
-      44	        10,
-      45	        description="Outbound HTTP timeout in seconds",
-      46	        gt=0
-      47	    )
-      48	    DB_PATH: Path = Field(
-      49	        "./data/db.sqlite",
-      50	        description="Path to SQLite database file"
-      51	    )
-      52	
-      53	    # Server settings
-      54	    INTERNAL_HOST: str = Field(
-      55	        "0.0.0.0",
-      56	        description="Uvicorn server host"
-      57	    )
-      58	    INTERNAL_PORT: int = Field(
-      59	        8000,
-      60	        description="Uvicorn server port",
-      61	        ge=1,
-      62	        le=65535
-      63	    )
-      64	    RELOAD: bool = Field(
-      65	        False,
-      66	        description="Enable Uvicorn auto-reload in development"
-      67	    )
+      30	    # ---------- FortiGate ----------
+      31	    FORTIGATE_API_TOKEN: str = Field(..., description="FortiGate REST API token (Bearer)")
+      32	    FORTIGATE_VDOM: str = Field(..., min_length=1, description="FortiGate VDOM name")
+      33	
+      34	    # ---------- Backend plug-in ----------
+      35	    FIREWALL_BACKEND: str = Field(
+      36	        "opnsense",
+      37	        description="Backend engine module name under firewall_agent.backends.*",
+      38	        min_length=1,
+      39	    )
+      40	
+      41	    # ---------- Alias configuration ----------
+      42	    PREFIX: str = Field("Biforch_", min_length=1, description="Prefix for OPNsense aliases")
+      43	    AGENT_NAME: str = Field(..., description="Logical name of this agent")
+      44	
+      45	    # ---------- Runtime behavior ----------
+      46	    TIMEOUT: int = Field(10, description="Outbound HTTP timeout in seconds", gt=0)
+      47	    DB_PATH: Path = Field("./data/db.sqlite", description="Path to SQLite database file")
+      48	
+      49	    # ---------- API server ----------
+      50	    INTERNAL_HOST: str = Field("0.0.0.0", description="Uvicorn server host")
+      51	    INTERNAL_PORT: int = Field(8000, description="Uvicorn server port", ge=1, le=65535)
+      52	    RELOAD: bool = Field(False, description="Enable Uvicorn auto-reload in development")
+      53	
+      54	    # ---------- Misc ----------
+      55	    ACTION_MAP: dict[str, str] = Field(
+      56	        default_factory=lambda: {"pass": "pass", "block": "block", "reject": "block"},
+      57	        description="Map OPNsense actions to Core contract",
+      58	    )
+      59	
+      60	    LOG_FILE_PATH: Path = Field("./data/.log", description="Path to log file")
+      61	
+      62	    # ---------- Pydantic settings ----------
+      63	    model_config = {
+      64	        "extra": "ignore",
+      65	        "case_sensitive": True,
+      66	        "env_file": ".env",
+      67	    }
       68	
-      69	    # Internal mappings
-      70	    ACTION_MAP: Dict[str, str] = Field(
-      71	        default_factory=lambda: {"pass": "pass", "block": "block", "reject": "block"},
-      72	        description="Map OPNsense actions to Core contract"
-      73	    )
-      74	
-      75	    # Logging
-      76	    LOG_FILE_PATH: Path = Field(
-      77	        "./data/.log",
-      78	        description="Path to log file"
-      79	    )
-      80	
-      81	    # Pydantic settings
-      82	    model_config = {
-      83	        "extra": "ignore",
-      84	        "case_sensitive": True,
-      85	        "env_file": ".env",
-      86	    }
-      87	
-      88	    # ---------------------- Validators ----------------------
-      89	    @field_validator("DB_PATH", mode="before")
-      90	    @classmethod
-      91	    def _validate_db_path(cls, v: str | Path) -> Path:
-      92	        path = Path(v)
-      93	        parent = path.parent
-      94	        if not parent.exists():
-      95	            raise ValueError(f"DB_PATH directory does not exist: {parent}")
-      96	        return path
-      97	
-      98	    @field_validator("LOG_FILE_PATH", mode="before")
-      99	    @classmethod
-     100	    def _validate_log_file_path(cls, v: str | Path) -> Path:
-     101	        path = Path(v)
-     102	        parent = path.parent
-     103	        if not parent.exists():
-     104	            raise ValueError(f"LOG_FILE_PATH directory does not exist: {parent}")
-     105	        return path
-     106	
-     107	    @field_validator("INTERNAL_HOST", mode="before")
-     108	    @classmethod
-     109	    def _validate_internal_host(cls, v: str) -> str:
-     110	        try:
-     111	            ipaddress.ip_address(v)
-     112	        except ValueError:
-     113	            raise ValueError(f"INTERNAL_HOST must be a valid IP address: {v}")
-     114	        return v
-     115	
-     116	    @field_validator("PREFIX", mode="before")
-     117	    @classmethod
-     118	    def _validate_prefix(cls, v: str) -> str:
-     119	        if not v or v.strip() == "":
-     120	            raise ValueError("PREFIX cannot be empty")
-     121	        return v
-     122	
-     123	    @field_validator("CALLBACK_PATH", mode="before")
-     124	    @classmethod
-     125	    def _validate_callback_path(cls, v: str) -> str:
-     126	        if not v.startswith("/"):
-     127	            raise ValueError("CALLBACK_PATH must start with '/'")
-     128	        return v
-     129	
-     130	    @field_validator("ACTION_MAP", mode="before")
-     131	    @classmethod
-     132	    def _validate_action_map(cls, v: Dict[str, str]) -> Dict[str, str]:
-     133	        if not isinstance(v, dict) or not v:
-     134	            raise ValueError("ACTION_MAP must be a non-empty dict")
-     135	        return v
-     136	
-     137	    @field_validator("RELOAD", mode="before")
-     138	    @classmethod
-     139	    def _parse_reload_flag(cls, v: bool | str) -> bool:
-     140	        if isinstance(v, str):
-     141	            val = v.lower()
-     142	            if val in ("true", "1", "yes"):
-     143	                return True
-     144	            if val in ("false", "0", "no"):
-     145	                return False
-     146	            raise ValueError("RELOAD must be a boolean value")
-     147	        return bool(v)
-     148	
-     149	
-     150	LOGGING_CONFIG: dict = {
-     151	    "version": 1,
-     152	    "disable_existing_loggers": False,
-     153	    "formatters": {
-     154	        "standard": {
-     155	            "format": "%(asctime)s,%(msecs)03d [%(levelname)s] %(filename)s: %(message)s",
-     156	            "datefmt": "%Y-%m-%d %H:%M:%S",
-     157	        },
-     158	        "colored": {
-     159	            "()": "uvicorn.logging.DefaultFormatter",
-     160	            "fmt": "%(levelprefix)s [%(filename)s:%(lineno)d] [%(asctime)s] %(message)s",
-     161	            "datefmt": "%H:%M:%S",
-     162	            "use_colors": True,
-     163	        },
-     164	    },
-     165	    "handlers": {
-     166	        "file": {
-     167	            "class": "logging.FileHandler",
-     168	            "level": "INFO",
-     169	            "formatter": "standard",
-     170	            "filename": ".log",
-     171	            "mode": "a",
-     172	        },
-     173	        "console": {
-     174	            "class": "logging.StreamHandler",
-     175	            "level": "DEBUG",
-     176	            "formatter": "colored",
-     177	            "stream": "ext://sys.stdout",
-     178	        },
-     179	    },
-     180	    "loggers": {
-     181	        "": {
-     182	            "handlers": ["console", "file"],
-     183	            "level": "INFO",
-     184	            "propagate": False,
-     185	        },
-     186	    },
-     187	}
-     188	
-     189	# Instantiate settings (fails on validation error)
-     190	try:
-     191	    settings = Settings()
-     192	    LOGGING_CONFIG["handlers"]["file"]["filename"] = settings.LOG_FILE_PATH
-     193	    logging.config.dictConfig(LOGGING_CONFIG)
-     194	    logging.info("Settings loaded successfully")
-     195	except ValidationError as exc:
-     196	    logging.error("🚨 Configuration error:\n", exc, file=sys.stderr)
-     197	    sys.exit(1)
-     198	
-     199	
-     200	if __name__ == "__main__":
-     201	    settings_json = settings.model_dump_json(indent=2)
-     202	    logging.info(f"{settings_json}")
+      69	    # ----------------------------- Validators -----------------------------
+      70	    @field_validator("FIREWALL_BACKEND", mode="before")
+      71	    @classmethod
+      72	    def _validate_backend_exists(cls, value: str) -> str:
+      73	        """
+      74	        Fail fast if the requested backend does not exist **without importing it**.
+      75	
+      76	        Importing would execute `firewall_agent.backends.__init__` and pull `settings`
+      77	        a second time, leading to a circular-import error while `Settings()` is still
+      78	        being constructed.  Instead, simply check that the file
+      79	        `<package_root>/backends/<backend>.py` is present.
+      80	        """
+      81	        backend = value.lower()
+      82	
+      83	        # `config.py` itself lives directly in `firewall_agent`, so this is the package root
+      84	        package_root = Path(__file__).resolve().parent
+      85	        backend_file = package_root / "backends" / f"{backend}.py"
+      86	
+      87	        if not backend_file.is_file():
+      88	            raise ValueError(
+      89	                f"Backend '{backend}' was not found under '{backend_file.parent}'."
+      90	            )
+      91	
+      92	        return backend
+      93	
+      94	    @field_validator("DB_PATH", mode="before")
+      95	    @classmethod
+      96	    def _validate_db_path(cls, v: str | Path) -> Path:
+      97	        path = Path(v)
+      98	        parent = path.parent
+      99	        if not parent.exists():
+     100	            raise ValueError(f"DB_PATH directory does not exist: {parent}")
+     101	        return path
+     102	
+     103	    @field_validator("LOG_FILE_PATH", mode="before")
+     104	    @classmethod
+     105	    def _validate_log_file_path(cls, v: str | Path) -> Path:
+     106	        path = Path(v)
+     107	        parent = path.parent
+     108	        if not parent.exists():
+     109	            raise ValueError(f"LOG_FILE_PATH directory does not exist: {parent}")
+     110	        return path
+     111	
+     112	    @field_validator("INTERNAL_HOST", mode="before")
+     113	    @classmethod
+     114	    def _validate_internal_host(cls, v: str) -> str:
+     115	        try:
+     116	            ipaddress.ip_address(v)
+     117	        except ValueError:
+     118	            raise ValueError(f"INTERNAL_HOST must be a valid IP address: {v}")
+     119	        return v
+     120	
+     121	    @field_validator("PREFIX", mode="before")
+     122	    @classmethod
+     123	    def _validate_prefix(cls, v: str) -> str:
+     124	        if not v or v.strip() == "":
+     125	            raise ValueError("PREFIX cannot be empty")
+     126	        return v
+     127	
+     128	    @field_validator("ACTION_MAP", mode="before")
+     129	    @classmethod
+     130	    def _validate_action_map(cls, v: dict[str, str]) -> dict[str, str]:
+     131	        if not isinstance(v, dict) or not v:
+     132	            raise ValueError("ACTION_MAP must be a non-empty dict")
+     133	        return v
+     134	
+     135	    @field_validator("RELOAD", mode="before")
+     136	    @classmethod
+     137	    def _parse_reload_flag(cls, v: bool | str) -> bool:
+     138	        if isinstance(v, str):
+     139	            val = v.lower()
+     140	            if val in ("true", "1", "yes"):
+     141	                return True
+     142	            if val in ("false", "0", "no"):
+     143	                return False
+     144	            raise ValueError("RELOAD must be a boolean value")
+     145	        return bool(v)
+     146	
+     147	
+     148	# ----------------------------- Logging setup -----------------------------
+     149	LOGGING_CONFIG: dict = {
+     150	    "version": 1,
+     151	    "disable_existing_loggers": False,
+     152	    "formatters": {
+     153	        "standard": {
+     154	            "format": "%(asctime)s,%(msecs)03d [%(levelname)s] %(filename)s: %(message)s",
+     155	            "datefmt": "%Y-%m-%d %H:%M:%S",
+     156	        },
+     157	        "colored": {
+     158	            "()": "uvicorn.logging.DefaultFormatter",
+     159	            "fmt": "%(levelprefix)s [%(filename)s:%(lineno)d] [%(asctime)s] %(message)s",
+     160	            "datefmt": "%H:%M:%S",
+     161	            "use_colors": True,
+     162	        },
+     163	    },
+     164	    "handlers": {
+     165	        "file": {
+     166	            "class": "logging.FileHandler",
+     167	            "level": "INFO",
+     168	            "formatter": "standard",
+     169	            "filename": ".log",  # will be overwritten after settings load
+     170	            "mode": "a",
+     171	        },
+     172	        "console": {
+     173	            "class": "logging.StreamHandler",
+     174	            "level": "DEBUG",
+     175	            "formatter": "colored",
+     176	            "stream": "ext://sys.stdout",
+     177	        },
+     178	    },
+     179	    "loggers": {
+     180	        "": {
+     181	            "handlers": ["console", "file"],
+     182	            "level": "DEBUG",
+     183	            "propagate": False,
+     184	        },
+     185	    },
+     186	}
+     187	
+     188	# ----------------------------- Instantiate -------------------------------
+     189	try:
+     190	    settings = Settings()
+     191	    LOGGING_CONFIG["handlers"]["file"]["filename"] = settings.LOG_FILE_PATH
+     192	    logging.config.dictConfig(LOGGING_CONFIG)
+     193	    logging.info("Settings loaded successfully")
+     194	except ValidationError as exc:
+     195	    logging.error("🚨 Configuration error:\n%s", exc, exc_info=False)
+     196	    sys.exit(1)
+     197	
+     198	if __name__ == "__main__":
+     199	    print(settings.model_dump_json(indent=2))
 
 ------------------------------ firewall_agent/database.py ------------------------------
        1	"""SQLAlchemy engine / session boilerplate."""
        2	from sqlalchemy import create_engine
-       3	from sqlalchemy.orm import sessionmaker, declarative_base
+       3	from sqlalchemy.orm import declarative_base, sessionmaker
        4	
        5	from .config import settings
        6	
@@ -1026,75 +1521,42 @@
 ------------------------------ firewall_agent/dependencies.py ------------------------------
        1	from __future__ import annotations
        2	
-       3	from typing import Generator
+       3	from collections.abc import Generator
        4	
-       5	from fastapi import Depends  # re‑export for use in other modules
-       6	from sqlalchemy.orm import Session
-       7	
-       8	from .database import SessionLocal
-       9	from .backends import backend as _backend  # singleton
-      10	from .backends.base import FirewallBackend
-      11	from .clients.core import CoreClient
-      12	from .config import settings
-      13	from .models import AgentCredentials
-      14	
-      15	# ----------------------------- Database ---------------------------
+       5	from sqlalchemy.orm import Session
+       6	
+       7	from .backends import backend as _backend  # singleton
+       8	from .backends.base import FirewallBackend
+       9	from .database import SessionLocal
+      10	
+      11	# ----------------------------- Database ---------------------------
+      12	
+      13	def get_db() -> Generator[Session, None, None]:
+      14	    """
+      15	    Returns a SQLAlchemy session for dependency injection.
       16	
-      17	def get_db() -> Generator[Session, None, None]:
-      18	    """
-      19	    Returns a SQLAlchemy session for dependency injection.
-      20	
-      21	    Yields:
-      22	        Session: A SQLAlchemy session instance.
-      23	    """
-      24	    db: Session = SessionLocal()
-      25	    try:
-      26	        yield db
-      27	    finally:
-      28	        db.close()
-      29	
-      30	
-      31	# ----------------------------- Backend ---------------------------
+      17	    Yields:
+      18	        Session: A SQLAlchemy session instance.
+      19	    """
+      20	    db: Session = SessionLocal()
+      21	    try:
+      22	        yield db
+      23	    finally:
+      24	        db.close()
+      25	
+      26	
+      27	# ----------------------------- Backend ---------------------------
+      28	
+      29	def get_backend() -> FirewallBackend:  # pragma: no cover
+      30	    """
+      31	    Returns the singleton instance of the backend.
       32	
-      33	def get_backend() -> FirewallBackend:  # pragma: no cover
-      34	    """
-      35	    Returns the singleton instance of the backend.
-      36	
-      37	    Returns:
-      38	        FirewallBackend: The backend instance (e.g., Nginx).
-      39	    """
-      40	    return _backend
-      41	
-      42	
-      43	# ------------------------------ Core -----------------------------
-      44	
-      45	
-      46	def get_core_client(db: Session) -> CoreClient:
-      47	    """
-      48	    Create a CoreClient using the stored actor token from the database.
-      49	    Raises HTTPException if no token is available.
-      50	
-      51	    Args:
-      52	        db (Session): The SQLAlchemy session to retrieve credentials.
-      53	
-      54	    Returns:
-      55	        CoreClient: The CoreClient instance initialized with the actor token.
-      56	
-      57	    Raises:
-      58	        HTTPException: If no token is found for the agent in the database.
-      59	    """
-      60	    from fastapi import HTTPException
-      61	
-      62	    # Retrieve the agent's credentials from the local database
-      63	    cred: AgentCredentials | None = db.query(AgentCredentials).first()
-      64	    token: str | None = cred.token if cred else None
-      65	
-      66	    if not token:
-      67	        raise HTTPException(
-      68	            status_code=500, detail="Missing actor token: please register the agent first.")
-      69	
-      70	    # Initialize CoreClient with actor_token
-      71	    return CoreClient(str(settings.CORE_URL), actor_token=token)
+      33	    Returns:
+      34	        FirewallBackend: The backend instance (e.g., Nginx).
+      35	    """
+      36	    return _backend
+      37	
+      38	
 
 ------------------------------ firewall_agent/__init__.py ------------------------------
        1	"""Package entry‑point – re‑export the FastAPI application."""
@@ -1102,205 +1564,312 @@
 
 ------------------------------ firewall_agent/models.py ------------------------------
        1	"""ORM definitions – mirror local state for reverse‑proxies / aliases / rules."""
-       2	from sqlalchemy import Column, Integer, String, DateTime, func
-       3	from .database import Base, engine
-       4	
+       2	from sqlalchemy import Column, DateTime, Integer, String, func
+       3	
+       4	from .database import Base, engine
        5	
-       6	class ReverseProxyDB(Base):
-       7	    __tablename__ = "reverse_proxies"
-       8	
-       9	    id = Column(String(36), primary_key=True, index=True)  # UUID
-      10	    name = Column(String, nullable=False)
-      11	    ip = Column(String, nullable=False)
-      12	    ports = Column(String, nullable=False)        # e.g. "80,443"
-      13	    allowed_ips = Column(String, nullable=False)  # comma‑separated CIDRs
-      14	
+       6	
+       7	class ReverseProxyDB(Base):
+       8	    __tablename__ = "reverse_proxies"
+       9	
+      10	    id = Column(String(36), primary_key=True, index=True)  # UUID
+      11	    name = Column(String, nullable=False)
+      12	    ip = Column(String, nullable=False)
+      13	    ports = Column(String, nullable=False)        # e.g. "80,443"
+      14	    allowed_ips = Column(String, nullable=False)  # comma‑separated CIDRs
       15	
-      16	class AliasDB(Base):
-      17	    __tablename__ = "aliases"
-      18	
-      19	    id = Column(String(36), primary_key=True, index=True)  # OPNsense UUID
-      20	    service_name = Column(String, nullable=False)
-      21	
+      16	
+      17	class AliasDB(Base):
+      18	    __tablename__ = "aliases"
+      19	
+      20	    id = Column(String(36), primary_key=True, index=True)
+      21	    service_name = Column(String, nullable=False)
       22	
-      23	class RuleDB(Base):
-      24	    __tablename__ = "rules"
-      25	
-      26	    id = Column(Integer, primary_key=True, index=True)
-      27	    firewall_rule_uuid = Column(String, nullable=False, unique=True)
-      28	    action = Column(String, nullable=False)
-      29	    src_ip = Column(String, nullable=False)
-      30	    dest_alias_id = Column(String(36), nullable=False)
-      31	
+      23	
+      24	class RuleDB(Base):
+      25	    __tablename__ = "rules"
+      26	
+      27	    id = Column(Integer, primary_key=True, index=True)
+      28	    firewall_rule_id = Column(String, nullable=False, unique=True)
+      29	    action = Column(String, nullable=False)
+      30	    src_ip = Column(String, nullable=False)
+      31	    dest_alias_id = Column(String(36), nullable=False)
       32	
-      33	class AgentCredentials(Base):
-      34	    __tablename__ = "agent_credentials"
-      35	
-      36	    uuid = Column(String(36), primary_key=True, index=True)
-      37	    token = Column(String, nullable=False)
-      38	
-      39	    created_at = Column(
-      40	        DateTime(timezone=True),
-      41	        server_default=func.now(),
-      42	        nullable=False,
-      43	    )
-      44	    updated_at = Column(
-      45	        DateTime(timezone=True),
-      46	        server_default=func.now(),
-      47	        onupdate=func.now(),
-      48	        nullable=False,
-      49	    )
-      50	
+      33	
+      34	class AgentCredentials(Base):
+      35	    __tablename__ = "agent_credentials"
+      36	
+      37	    uuid = Column(String(36), primary_key=True, index=True)
+      38	    token = Column(String, nullable=False)
+      39	
+      40	    created_at = Column(
+      41	        DateTime(timezone=True),
+      42	        server_default=func.now(),
+      43	        nullable=False,
+      44	    )
+      45	    updated_at = Column(
+      46	        DateTime(timezone=True),
+      47	        server_default=func.now(),
+      48	        onupdate=func.now(),
+      49	        nullable=False,
+      50	    )
       51	
-      52	# Create tables on first import – SQLite is file‑based so safe for dev
-      53	Base.metadata.create_all(bind=engine)
+      52	
+      53	# Create tables on first import – SQLite is file‑based so safe for dev
+      54	Base.metadata.create_all(bind=engine)
 
 ------------------------------ firewall_agent/schemas.py ------------------------------
        1	"""Pydantic request / response models shared by API endpoints."""
        2	from __future__ import annotations
        3	
-       4	from typing import List
+       4	from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validator
        5	
-       6	from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validator
-       7	
-       8	
-       9	class ReverseProxyIn(BaseModel):
-      10	    uuid: str = Field(..., description="Client‑provided UUID")
-      11	    name: str
-      12	    ip: IPvAnyAddress
-      13	    ports: List[int] = Field(..., min_length=1)
-      14	    allowed_ips: List[str] = Field(..., min_length=1)
+       6	
+       7	class ReverseProxyIn(BaseModel):
+       8	    uuid: str = Field(..., description="Client‑provided UUID")
+       9	    name: str
+      10	    ip: IPvAnyAddress
+      11	    ports: list[int] = Field(..., min_length=1)
+      12	    allowed_ips: list[str] = Field(..., min_length=1)
+      13	
+      14	    model_config = ConfigDict(from_attributes=True)
       15	
-      16	    model_config = ConfigDict(from_attributes=True)
-      17	
-      18	    @field_validator("ports")
-      19	    @classmethod
-      20	    def _port_range(cls, v: List[int]) -> List[int]:
-      21	        for p in v:
-      22	            if not 1 <= p <= 65535:
-      23	                raise ValueError("Port must be between 1‑65535")
-      24	        return v
-      25	
-      26	
-      27	class ReverseProxyOut(BaseModel):
-      28	    id: str
-      29	
-      30	
-      31	class AliasIn(BaseModel):
-      32	    service_name: str
-      33	
-      34	
-      35	class AliasOut(BaseModel):
-      36	    id: str
-      37	    service_name: str
+      16	    @field_validator("ports")
+      17	    @classmethod
+      18	    def _port_range(cls, v: list[int]) -> list[int]:
+      19	        for p in v:
+      20	            if not 1 <= p <= 65535:
+      21	                raise ValueError("Port must be between 1‑65535")
+      22	        return v
+      23	
+      24	
+      25	class ReverseProxyOut(BaseModel):
+      26	    id: str
+      27	
+      28	
+      29	class AliasIn(BaseModel):
+      30	    service_name: str
+      31	
+      32	
+      33	class AliasOut(BaseModel):
+      34	    id: str
+      35	    service_name: str
+      36	
+      37	    model_config = ConfigDict(from_attributes=True)
       38	
-      39	    model_config = ConfigDict(from_attributes=True)
-      40	
-      41	
-      42	class RuleOut(BaseModel):
-      43	    id: int
-      44	    action: str
-      45	    src_ip: str
-      46	    service_name: str | None
-      47	
-      48	    model_config = ConfigDict(from_attributes=True)
+      39	
+      40	class RuleOut(BaseModel):
+      41	    id: int
+      42	    action: str
+      43	    src_ip: str
+      44	    service_name: str | None
+      45	
+      46	    model_config = ConfigDict(from_attributes=True)
 
 ------------------------------ firewall_agent/services/sync.py ------------------------------
        1	"""Business logic – reconcile remote firewall rules with local database and Core."""
        2	from __future__ import annotations
        3	
-       4	import logging
-       5	from typing import Dict, List, Tuple
-       6	
-       7	from sqlalchemy.orm import Session
-       8	
-       9	from ..backends import backend
-      10	from ..clients.core import CoreClient
-      11	from ..config import settings
-      12	from ..dependencies import get_core_client
-      13	from ..models import AliasDB, RuleDB
-      14	
+       4	from sqlalchemy.orm import Session
+       5	
+       6	from ..backends import backend, RuleInfo
+       7	from ..clients.core import CoreClient
+       8	from ..clients.factory import get_core_client
+       9	from ..config import logging
+      10	from ..models import AliasDB, RuleDB
+      11	
+      12	
+      13	def _collect_remote(db: Session) -> tuple[list[RuleInfo], list[str]]:
+      14	    """Collect remote firewall rule diffs without modifying the database.
       15	
-      16	def _translate_action(raw_action: str) -> str:
-      17	    """Map raw OPNsense value → Core contract (pass/block)."""
-      18	    return settings.ACTION_MAP.get(raw_action, "block")
+      16	    This function queries the firewall backend for all rules, then determines
+      17	    which rules are newly enabled, which are disabled, and which existing rules
+      18	    have changed. It does NOT write to the local database.
       19	
-      20	
-      21	def _collect_remote(db: Session) -> Tuple[List[Dict], List[Dict]]:
-      22	    """Fetch remote rules and decide which ones to add/remove locally."""
-      23	    new_rules: List[Dict] = []
-      24	    removed_rules: List[Dict] = []
-      25	
-      26	    rows = backend.list_rules()
-      27	
-      28	    for row in rows:
-      29	        uuid_fw = row["uuid"]
-      30	        enabled = row["enabled"] == "1"
-      31	        details = backend.rule_details(uuid_fw)
-      32	
-      33	        raw_action = next(k for k, v in details["action"].items() if v["selected"] == 1)
-      34	        action = _translate_action(raw_action)
-      35	
-      36	        src_ip = details["source_net"]
-      37	        dest = details["destination_net"]
-      38	        if not dest.startswith(settings.PREFIX):
-      39	            continue  # not managed by Biforch
-      40	        service_name = dest[len(settings.PREFIX):]
-      41	
-      42	        alias = db.query(AliasDB).filter_by(service_name=service_name).first()
-      43	        if not alias:
-      44	            continue  # we do not know this service (yet)
-      45	
-      46	        existing = db.query(RuleDB).filter_by(firewall_rule_uuid=uuid_fw).first()
+      20	    Args:
+      21	        db (Session): SQLAlchemy database session.
+      22	
+      23	    Returns:
+      24	        (list[dict], list[dict]): A pair of lists:
+      25	        - new_rules: dicts with keys
+      26	            'firewall_rule_id', 'action', 'ip', 'service'
+      27	        - removed_rules: dicts with key 'firewall_rule_id'
+      28	    """
+      29	    new_rules: list[dict] = []
+      30	    removed_rules: list[dict] = []
+      31	
+      32	    enabled_rules: dict[str, RuleInfo] = backend.list_rules()
+      33	    # Map remote rules by id
+      34	    enabled_ids: set[str] = set(enabled_rules.keys())
+      35	    # Map local rules by id
+      36	    local_rules = {r.firewall_rule_id: r for r in db.query(RuleDB).all()}
+      37	    local_ids: set[str] = set(local_rules.keys())
+      38	
+      39	    # Added rules
+      40	    for rule_id in enabled_ids - local_ids:
+      41	        info = enabled_rules[rule_id]
+      42	        new_rules.append(info)
+      43	
+      44	    # Removed rules
+      45	    for rule_id in local_ids - enabled_ids:
+      46	        removed_rules.append(rule_id)
       47	
-      48	        if enabled and not existing:
-      49	            db.add(
-      50	                RuleDB(
-      51	                    firewall_rule_uuid=uuid_fw,
-      52	                    action=action,
-      53	                    src_ip=src_ip,
-      54	                    dest_alias_id=alias.id,
-      55	                )
-      56	            )
-      57	            new_rules.append({
-      58	                "firewall_rule_uuid": uuid_fw,
-      59	                "action": action,
-      60	                "ip": src_ip,
-      61	                "service": service_name,
-      62	            })
-      63	        elif not enabled and existing:
-      64	            db.delete(existing)
-      65	            removed_rules.append({"firewall_rule_uuid": uuid_fw})
-      66	
-      67	    return new_rules, removed_rules
-      68	
-      69	
-      70	def sync_firewall(db: Session) -> None:
-      71	    """High‑level sync: fetch → diff → commit → notify Core."""
-      72	    core: CoreClient = get_core_client(db)
-      73	    try:
-      74	        new_rules, removed_rules = _collect_remote(db)
-      75	        if new_rules or removed_rules:
-      76	            db.commit()
-      77	            logging.info("Firewall sync: +%s  -%s", len(new_rules), len(removed_rules))
-      78	            _notify_core(core, new_rules, removed_rules)
-      79	    except Exception as exc:  # noqa: BLE001
-      80	        logging.error("Firewall sync failed: %s", exc)
-      81	    finally:
-      82	        db.close()
-      83	
-      84	
-      85	def _notify_core(core: CoreClient, new_rules: List[Dict], removed_rules: List[Dict]) -> None:
-      86	    for rule in new_rules:
-      87	        try:
-      88	            core.create_rule(**rule)
-      89	        except Exception as exc:  # noqa: BLE001
-      90	            logging.warning("Failed to notify Core (create): %s", exc)
-      91	    for rule in removed_rules:
-      92	        try:
-      93	            core.delete_rule(rule["firewall_rule_uuid"])
-      94	        except Exception as exc:  # noqa: BLE001
-      95	            logging.warning("Failed to notify Core (delete): %s", exc)
+      48	    # Modified rules: present in both but with changed attributes
+      49	    for rule_id in enabled_ids & local_ids:
+      50	        info = enabled_rules[rule_id]
+      51	        local = local_rules[rule_id]
+      52	        alias = db.query(AliasDB).get(local.dest_alias_id)
+      53	        local_service = alias.service_name if alias else None
+      54	        if (
+      55	            info["action"] != local.action or
+      56	            info["src_ip"] != local.src_ip or
+      57	            info["service_name"] != local_service
+      58	        ):
+      59	            # treat modification as removal then addition
+      60	            removed_rules.append(rule_id)
+      61	            new_rules.append(info)
+      62	
+      63	    return new_rules, removed_rules
+      64	
+      65	
+      66	def process_rules_change(
+      67	    db: Session,
+      68	    core: CoreClient,
+      69	    new_rules: list[RuleInfo],
+      70	    removed_rules: list[str],
+      71	) -> None:
+      72	    """Apply rule changes to the DB and notify Biforch Core.
+      73	
+      74	    This function writes all new rules into the local database, deletes all
+      75	    removed rules, commits the transaction, and then calls the Core API to
+      76	    reflect these changes.
+      77	
+      78	    Args:
+      79	        db (Session): SQLAlchemy database session.
+      80	        core (CoreClient): Core client instance for rule notifications.
+      81	        new_rules (list[RuleInfo]): List of new rules to add.
+      82	        removed_rules (list[str]): List of rule IDs to remove.
+      83	    """
+      84	    # 1) Update local database
+      85	    # delete first, then insert new ones
+      86	    # This ensures we don't have duplicates if the same rule is edited
+      87	    for rule in removed_rules:
+      88	        db.query(RuleDB).filter_by(
+      89	            firewall_rule_id=rule
+      90	        ).delete()
+      91	
+      92	    for rule in new_rules:
+      93	        alias = db.query(AliasDB).filter_by(
+      94	            service_name=rule["service_name"]
+      95	        ).first()
+      96	        db.add(RuleDB(
+      97	            firewall_rule_id=rule["firewall_rule_id"],
+      98	            action=rule["action"],
+      99	            src_ip=rule["ip"],
+     100	            dest_alias_id=alias.id,
+     101	        ))
+     102	
+     103	    db.commit()
+     104	    logging.info(
+     105	        "Processed DB changes: +%d / -%d",
+     106	        len(new_rules),
+     107	        len(removed_rules),
+     108	    )
+     109	
+     110	    # 2) Notify Core service
+     111	    # delete first, then insert new ones
+     112	    # This ensures we don't have duplicates if the same rule is edited
+     113	    for rule in removed_rules:
+     114	        try:
+     115	            core.delete_rule(rule)
+     116	        except Exception as exc:
+     117	            logging.warning("Core delete_rule failed: %s", exc)
+     118	
+     119	    for rule in new_rules:
+     120	        try:
+     121	            core.create_rule(**rule)
+     122	        except Exception as exc:
+     123	            logging.warning("Core create_rule failed: %s", exc)
+     124	
+     125	
+     126	def sync_firewall(db: Session) -> None:
+     127	    """High-level sync: collect diffs then process changes.
+     128	
+     129	    This function is the entry point for both periodic sync and webhook-driven
+     130	    sync. It fetches rule diffs via `_collect_remote` and then delegates
+     131	    to `process_rules_change`.
+     132	
+     133	    Args:
+     134	        db (Session): SQLAlchemy database session.
+     135	    """
+     136	    core = get_core_client(db)
+     137	
+     138	    try:
+     139	        new_rules, removed_rules = _collect_remote(db)
+     140	        if new_rules or removed_rules:
+     141	            process_rules_change(db, core, new_rules, removed_rules)
+     142	    except Exception as exc:
+     143	        logging.error("Firewall sync failed: %s", exc)
+     144	    finally:
+     145	        db.close()
+
+------------------------------ get_address_ip.py ------------------------------
+       1	import requests
+       2	
+       3	# ---------- config ----------
+       4	API_TOKEN   = "6d735twt9QGctzxqjxps3mqtsGcytr"
+       5	REMOTE_URL  = "https://192.168.87.1"          # FortiGate address
+       6	ADDRESS_NAME = "Biforch_openspeedtest"
+       7	VDOM        = "root"                          # change if needed
+       8	
+       9	# ---------- request ----------
+      10	url = f"{REMOTE_URL}/api/v2/cmdb/firewall/address/{ADDRESS_NAME}"
+      11	params = {"vdom": VDOM}       # omit if appliance has no VDOMs
+      12	
+      13	headers = {
+      14	    "Authorization": f"Bearer {API_TOKEN}",
+      15	    "Content-Type": "application/json"
+      16	}
+      17	
+      18	try:
+      19	    resp = requests.get(url, headers=headers, params=params, verify=False)
+      20	    resp.raise_for_status()
+      21	    print(f"✅ Address '{ADDRESS_NAME}' details:")
+      22	    print(resp.text)
+      23	except Exception as exc:
+      24	    print(f"❌ Request failed: {exc}")
+
+------------------------------ new_addrgrp.py ------------------------------
+       1	import requests
+       2	
+       3	# ======== 參數設定 ========
+       4	API_TOKEN = "6d735twt9QGctzxqjxps3mqtsGcytr"
+       5	REMOTE_URL = "https://192.168.87.1"
+       6	GROUP_NAME = "Biforch_openspeedtest"
+       7	
+       8	# ======== API 請求 ========
+       9	url = f"{REMOTE_URL}/api/v2/cmdb/firewall/addrgrp"
+      10	
+      11	headers = {
+      12	    "Authorization": f"Bearer {API_TOKEN}",
+      13	    "Content-Type": "application/json"
+      14	}
+      15	
+      16	payload = {
+      17	    "name": GROUP_NAME,
+      18	    "member": []  # 空的 address group
+      19	}
+      20	
+      21	# ======== 發送請求 ========
+      22	try:
+      23	    response = requests.post(url, headers=headers, json=payload, verify=False)
+      24	    if response.status_code == 200:
+      25	        print(f"✅ 建立成功: {GROUP_NAME}")
+      26	        print(f"回應: {response.json()}")
+      27	    else:
+      28	        print(f"❌ 錯誤 {response.status_code}: {response.text}")
+      29	except Exception as e:
+      30	    print(f"❌ 發送請求失敗: {e}")
 
 ------------------------------ pyproject.toml ------------------------------
        1	[tool.poetry]
@@ -1335,14 +1904,22 @@
       30	factory-boy    = "^3.3"
       31	freezegun      = "^1.4"
       32	
-      33	# ---------- CLI entry ----------
-      34	[tool.poetry.scripts]
-      35	firewall-agent = "firewall_agent.cli:app"
-      36	
-      37	# ---------- Build backend ----------
-      38	[build-system]
-      39	requires      = ["poetry-core>=1.8.0"]
-      40	build-backend = "poetry.core.masonry.api"
+      33	
+      34	# ---------- CLI entry ----------
+      35	ruff = "^0.11.12"
+      36	[tool.poetry.scripts]
+      37	firewall-agent = "firewall_agent.cli:app"
+      38	
+      39	[tool.ruff]
+      40	target-version = "py312"
+      41	
+      42	[tool.ruff.lint]
+      43	select = ["F", "I", "UP"]
+      44	
+      45	# ---------- Build backend ----------
+      46	[build-system]
+      47	requires      = ["poetry-core>=1.8.0"]
+      48	build-backend = "poetry.core.masonry.api"
 
 ------------------------------ README.md ------------------------------
        1	# **Firewall Agent for Biforch Platform**
@@ -1406,8 +1983,8 @@
       59	
       60	```ini
       61	PREFIX=Biforch_
-      62	API_KEY=<OPNSense_API_KEY>
-      63	API_SECRET=<OPNSense_API_SECRET>
+      62	OPNSENSE_API_KEY=<OPNSense_OPNSENSE_API_KEY>
+      63	OPNSENSE_API_SECRET=<OPNSense_OPNSENSE_API_SECRET>
       64	REMOTE_URL=http://opnsense.local
       65	CORE_URI=http://core.local:8001
       66	TIMEOUT=15
@@ -1524,12 +2101,150 @@
      177	
      178	This project is licensed under the MIT License.
 
+------------------------------ rule_details.py ------------------------------
+       1	import requests
+       2	
+       3	# ======== 參數設定 ========
+       4	API_TOKEN = "6d735twt9QGctzxqjxps3mqtsGcytr"
+       5	REMOTE_URL = "https://192.168.87.1"
+       6	GROUP_NAME = "Biforch_openspeedtest"
+       7	
+       8	# ======== API 請求 ========
+       9	url = f"{REMOTE_URL}/api/v2/cmdb/firewall/policy/2"
+      10	
+      11	headers = {
+      12	    "Authorization": f"Bearer {API_TOKEN}",
+      13	    "Content-Type": "application/json"
+      14	}
+      15	params = {"vdom": "root"}
+      16	
+      17	# 取出 ID=2 的 policy
+      18	resp = requests.get(url, headers=headers, params=params, verify=False)
+      19	
+      20	resp.raise_for_status()
+      21	print(resp.text)
+      22	policy = resp.json().get("results", {})
+      23	print(policy)
+
+------------------------------ rule.py ------------------------------
+       1	import requests, json, sys
+       2	
+       3	API_TOKEN      = "6d735twt9QGctzxqjxps3mqtsGcytr"
+       4	REMOTE_URL     = "https://192.168.87.1"
+       5	SRC_IP         = "192.168.87.51"
+       6	SRC_ADDR_NAME  = "src_192.168.87.51"
+       7	DST_GROUP_NAME = "Biforch_test_addrgrp"
+       8	INTERFACE      = "port2"
+       9	POLICY_NAME    = "client_pass_test"  # ← 改為你在手動測試用的名稱
+      10	
+      11	headers = {
+      12	    "Authorization": f"Bearer {API_TOKEN}",
+      13	    "Content-Type": "application/json"
+      14	}
+      15	params = {
+      16	    "datasource": "true",
+      17	    "with_meta":  "true",
+      18	    "vdom":       "root"
+      19	}
+      20	
+      21	
+      22	def ensure_interface_exists():
+      23	    url  = f"{REMOTE_URL}/api/v2/cmdb/system/interface/{INTERFACE}"
+      24	    if requests.get(url, headers=headers, verify=False).status_code != 200:
+      25	        sys.exit(f"❌ 介面 {INTERFACE} 不存在")
+      26	
+      27	
+      28	def ensure_schedule_exists():
+      29	    url  = f"{REMOTE_URL}/api/v2/cmdb/firewall.schedule/recurring/always"
+      30	    if requests.get(url, headers=headers, verify=False).status_code == 404:
+      31	        print("📌 建立 schedule 'always'")
+      32	        payload = {
+      33	            "name":  "always",
+      34	            "start": "00:00",
+      35	            "end":   "23:59",
+      36	            "day":   ["sun","mon","tue","wed","thu","fri","sat"]
+      37	        }
+      38	        requests.post(
+      39	            f"{REMOTE_URL}/api/v2/cmdb/firewall.schedule/recurring",
+      40	            headers=headers, json=payload, verify=False
+      41	        ).raise_for_status()
+      42	
+      43	
+      44	def ensure_service_exists():
+      45	    for ep in ("firewall.service", "firewall.service/custom"):
+      46	        if requests.get(f"{REMOTE_URL}/api/v2/cmdb/{ep}/ALL",
+      47	                        headers=headers, verify=False).status_code == 200:
+      48	            print(f"✅ 服務 'ALL' 存在於 {ep}")
+      49	            return
+      50	    print("⚠️ 找不到服務 'ALL'，假設為內建服務並繼續")
+      51	
+      52	
+      53	def ensure_address_exists():
+      54	    if requests.get(f"{REMOTE_URL}/api/v2/cmdb/firewall/address/{SRC_ADDR_NAME}",
+      55	                    headers=headers, verify=False).status_code == 404:
+      56	        print(f"📌 建立來源 address: {SRC_ADDR_NAME}")
+      57	        payload = {"name": SRC_ADDR_NAME, "subnet": f"{SRC_IP}/32"}
+      58	        requests.post(
+      59	            f"{REMOTE_URL}/api/v2/cmdb/firewall/address",
+      60	            headers=headers, json=payload, verify=False
+      61	        ).raise_for_status()
+      62	
+      63	
+      64	def ensure_addrgrp_exists():
+      65	    if requests.get(f"{REMOTE_URL}/api/v2/cmdb/firewall/addrgrp/{DST_GROUP_NAME}",
+      66	                    headers=headers, verify=False).status_code == 404:
+      67	        print(f"📌 建立 address group: {DST_GROUP_NAME}")
+      68	        payload = {"name": DST_GROUP_NAME, "member": []}
+      69	        requests.post(
+      70	            f"{REMOTE_URL}/api/v2/cmdb/firewall/addrgrp",
+      71	            headers=headers, json=payload, verify=False
+      72	        ).raise_for_status()
+      73	
+      74	
+      75	def create_policy():
+      76	    url = f"{REMOTE_URL}/api/v2/cmdb/firewall/policy"
+      77	    payload = {
+      78	        "name":     POLICY_NAME,
+      79	        "srcintf":  [{"name": INTERFACE}],
+      80	        "dstintf":  [{"name": INTERFACE}],
+      81	        "action":   "accept",
+      82	        "srcaddr":  [{"name": SRC_ADDR_NAME}],
+      83	        "dstaddr":  [{"name": DST_GROUP_NAME}],
+      84	        "schedule": "always",
+      85	        "service":  [{"name": "ALL"}],
+      86	        "nat":      "enable"  # ← 字串 enable
+      87	    }
+      88	
+      89	    print("📤 發送 Payload:")
+      90	    print(json.dumps(payload, indent=2))
+      91	
+      92	    resp = requests.post(
+      93	        url, headers=headers, params=params,
+      94	        json=payload, verify=False
+      95	    )
+      96	    if resp.status_code == 200:
+      97	        print(f"✅ 防火牆規則建立成功: {POLICY_NAME}")
+      98	    else:
+      99	        print(f"❌ 建立失敗 {resp.status_code}: {resp.text}")
+     100	
+     101	
+     102	if __name__ == "__main__":
+     103	    try:
+     104	        ensure_interface_exists()
+     105	        ensure_schedule_exists()
+     106	        ensure_service_exists()
+     107	        ensure_address_exists()
+     108	        ensure_addrgrp_exists()
+     109	        create_policy()
+     110	    except Exception as e:
+     111	        print(f"❌ 執行失敗: {e}")
+
 ------------------------------ tests/test_firewall_agent.py ------------------------------
        1	import itertools
        2	import json
        3	import threading
        4	import time
-       5	from typing import Dict, Any
+       5	from typing import Any
        6	
        7	import pytest
        8	from fastapi.testclient import TestClient
@@ -1557,7 +2272,7 @@
       30	
       31	# Minimal fake HTTP Response
       32	class FakeResp:
-      33	    def __init__(self, data: Dict[str, Any], status: int = 200):
+      33	    def __init__(self, data: dict[str, Any], status: int = 200):
       34	        self._data = data
       35	        self.status_code = status
       36	        self.text = json.dumps(data)
@@ -1685,7 +2400,7 @@
      158	def test_rules_list_with_missing_alias(client):
      159	    db = firewall_agent.SessionLocal()
      160	    db.add(RuleDB(
-     161	        firewall_rule_uuid="fw-missing-1",
+     161	        firewall_rule_id="fw-missing-1",
      162	        action="pass",
      163	        src_ip="1.1.1.1",
      164	        dest_alias_id="missing"
@@ -1699,7 +2414,7 @@
      172	    db.query(RuleDB).delete()
      173	    for idx, ip in enumerate(["1.1.1.1", "2.2.2.2"], start=1):
      174	        db.add(RuleDB(
-     175	            firewall_rule_uuid=f"fw-{idx}",
+     175	            firewall_rule_id=f"fw-{idx}",
      176	            action="pass",
      177	            src_ip=ip,
      178	            dest_alias_id="none"
@@ -1711,7 +2426,7 @@
      184	    db.query(RuleDB).delete()
      185	    for idx, ip in enumerate(["2.2.2.2", "1.1.1.1"], start=1):
      186	        db.add(RuleDB(
-     187	            firewall_rule_uuid=f"fw-{idx}",
+     187	            firewall_rule_id=f"fw-{idx}",
      188	            action="pass",
      189	            src_ip=ip,
      190	            dest_alias_id="none"
@@ -1755,7 +2470,7 @@
      228	    db = firewall_agent.SessionLocal()
      229	    alias = db.query(AliasDB).filter_by(service_name="svc").first()
      230	    db.add(RuleDB(
-     231	        firewall_rule_uuid="u1",
+     231	        firewall_rule_id="u1",
      232	        action="pass",
      233	        src_ip="6.6.6.6",
      234	        dest_alias_id=alias.id

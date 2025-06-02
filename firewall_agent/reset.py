@@ -8,24 +8,22 @@ Usage:
 
 `config.py` must provide:
     PREFIX       : str
-    API_KEY      : str
-    API_SECRET   : str
+    OPNSENSE_API_KEY      : str
+    OPNSENSE_API_SECRET   : str
     REMOTE_URL   : str
     TIMEOUT      : int  (seconds)
 """
 from __future__ import annotations
 
-import logging
 import os
 import sys
-from typing import Dict, List
 
 import requests
 
 # ---------------------------------------------------------------------------
 # Central configuration – import from dedicated module
 # ---------------------------------------------------------------------------
-from firewall_agent.config import settings
+from firewall_agent.config import settings, logging
 
 # ---------------------------------------------------------------------------
 # HTTP helpers
@@ -34,14 +32,14 @@ from firewall_agent.config import settings
 
 def opn_get(path: str):
     res = requests.get(f"{settings.REMOTE_URL}{path}", auth=(
-        settings.API_KEY, settings.API_SECRET), timeout=settings.TIMEOUT)
+        settings.OPNSENSE_API_KEY, settings.OPNSENSE_API_SECRET), timeout=settings.TIMEOUT)
     res.raise_for_status()
     return res
 
 
 def opn_post(path: str, json_body=None):
     res = requests.post(
-        f"{settings.REMOTE_URL}{path}", auth=(settings.API_KEY, settings.API_SECRET), json=json_body, timeout=settings.TIMEOUT
+        f"{settings.REMOTE_URL}{path}", auth=(settings.OPNSENSE_API_KEY, settings.OPNSENSE_API_SECRET), json=json_body, timeout=settings.TIMEOUT
     )
     res.raise_for_status()
     return res
@@ -51,7 +49,7 @@ def opn_post(path: str, json_body=None):
 # ---------------------------------------------------------------------------
 
 
-def fetch_rule_rows() -> List[Dict]:
+def fetch_rule_rows() -> list[dict]:
     """Return list of rule rows from search endpoint."""
     return opn_get("/api/firewall/filter/search_rule").json().get("rows", [])
 
@@ -73,7 +71,7 @@ def delete_rule(uuid_: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def fetch_aliases() -> Dict[str, Dict]:
+def fetch_aliases() -> dict[str, dict]:
     data = opn_get("/api/firewall/alias/get").json()
     # {uuid: {...}}
     return data.get("alias", {}).get("aliases", {}).get("alias", {})

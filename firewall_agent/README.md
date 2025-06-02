@@ -59,8 +59,8 @@ Copy `.env.example` to `.env` and fill in your values:
 
 ```ini
 PREFIX=Biforch_
-API_KEY=<OPNSense_API_KEY>
-API_SECRET=<OPNSense_API_SECRET>
+OPNSENSE_API_KEY=<OPNSense_OPNSENSE_API_KEY>
+OPNSENSE_API_SECRET=<OPNSense_OPNSENSE_API_SECRET>
 REMOTE_URL=http://opnsense.local
 CORE_URI=http://core.local:8001
 TIMEOUT=15

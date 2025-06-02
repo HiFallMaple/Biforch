@@ -7,7 +7,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from enum import Enum
-from .database import Base
+from .database import Base, engine
 
 class PendingType(str, Enum):
     FIREWALL = "firewall"
@@ -63,7 +63,7 @@ class ServiceDB(Base):
 class RuleDB(Base):
     __tablename__ = "rules"
     id = Column(Integer, primary_key=True, index=True)
-    firewall_rule_uuid = Column(String, nullable=False, unique=True)
+    firewall_rule_id = Column(String, nullable=False, unique=True)
     action = Column(String, nullable=False)
     ip = Column(String, nullable=False)
     service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
@@ -80,3 +80,7 @@ class PendingRegistrationDB(Base):
     src_ip = Column(String, nullable=False)
     secret = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    
+# Create tables on first import – SQLite is file‑based so safe for dev
+Base.metadata.create_all(bind=engine)

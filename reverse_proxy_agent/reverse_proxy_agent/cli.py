@@ -7,7 +7,6 @@ Provides commands to enqueue registration with Biforch Core
 and to start the API server.
 After registration, stores received UUID and token in local database.
 """
-import logging
 import threading
 
 import typer
@@ -16,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Literal, Optional
 
-from .config import settings
+from .config import settings, logging
 from .clients.core import CoreClient
 from .database import SessionLocal  # This is where the session is created
 from .models import AgentCredentials
@@ -59,7 +58,7 @@ def init():
         # Build temporary FastAPI app for callback
         server_app = FastAPI()
 
-        @server_app.post(settings.CALLBACK_PATH)
+        @server_app.post("/registrations")
         async def receive_callback(body: RegistrationCallback):
             # Validate secret
             if body.secret != callback_data.get("secret"):
@@ -86,7 +85,7 @@ def init():
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
         logging.info(
-            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}{settings.CALLBACK_PATH} …"
+            f"🔄 Waiting for Core callback at http://{settings.INTERNAL_HOST}:{settings.INTERNAL_PORT}/registrations …"
         )
 
         # Enqueue registration with Core

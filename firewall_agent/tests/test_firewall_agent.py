@@ -2,7 +2,7 @@ import itertools
 import json
 import threading
 import time
-from typing import Dict, Any
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,7 +30,7 @@ def fake_uuid(name: str) -> str:
 
 # Minimal fake HTTP Response
 class FakeResp:
-    def __init__(self, data: Dict[str, Any], status: int = 200):
+    def __init__(self, data: dict[str, Any], status: int = 200):
         self._data = data
         self.status_code = status
         self.text = json.dumps(data)
@@ -158,7 +158,7 @@ def test_rules_and_hash_empty(client):
 def test_rules_list_with_missing_alias(client):
     db = firewall_agent.SessionLocal()
     db.add(RuleDB(
-        firewall_rule_uuid="fw-missing-1",
+        firewall_rule_id="fw-missing-1",
         action="pass",
         src_ip="1.1.1.1",
         dest_alias_id="missing"
@@ -172,7 +172,7 @@ def test_rules_hash_changes_and_order(client):
     db.query(RuleDB).delete()
     for idx, ip in enumerate(["1.1.1.1", "2.2.2.2"], start=1):
         db.add(RuleDB(
-            firewall_rule_uuid=f"fw-{idx}",
+            firewall_rule_id=f"fw-{idx}",
             action="pass",
             src_ip=ip,
             dest_alias_id="none"
@@ -184,7 +184,7 @@ def test_rules_hash_changes_and_order(client):
     db.query(RuleDB).delete()
     for idx, ip in enumerate(["2.2.2.2", "1.1.1.1"], start=1):
         db.add(RuleDB(
-            firewall_rule_uuid=f"fw-{idx}",
+            firewall_rule_id=f"fw-{idx}",
             action="pass",
             src_ip=ip,
             dest_alias_id="none"
@@ -228,7 +228,7 @@ def test_sync_deletes_disabled_rule(client, monkeypatch):
     db = firewall_agent.SessionLocal()
     alias = db.query(AliasDB).filter_by(service_name="svc").first()
     db.add(RuleDB(
-        firewall_rule_uuid="u1",
+        firewall_rule_id="u1",
         action="pass",
         src_ip="6.6.6.6",
         dest_alias_id=alias.id

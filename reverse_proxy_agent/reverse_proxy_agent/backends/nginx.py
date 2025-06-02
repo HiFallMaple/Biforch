@@ -1,17 +1,17 @@
 """Nginx backend – write per‑service allow/deny snippets then reload."""
 from __future__ import annotations
 
-import logging
 import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List
 
 from .base import ProxyBackend
+from ..config import settings, logging
 
 class NginxBackend(ProxyBackend):
-    def __init__(self, config_dir: Path) -> None:
-        self.config_dir = config_dir
+    def __init__(self) -> None:
+        self.config_dir: Path = settings.CONFIG_DIR
 
     # ------------------------------------------------------------------ sync
     def apply_rules(self, rules: Dict[str, List[str]]) -> None:

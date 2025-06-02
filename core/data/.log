@@ -1,41 +1,1497 @@
-2025-05-20 17:18:16,363 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:18:37,306 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:19:51,816 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:20:11,105 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:22:02,555 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:22:10,245 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:22:30,484 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:22:38,908 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:23:07,846 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:24:03,239 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:24:38,071 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:26:44,360 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:27:58,803 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:28:56,978 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:29:39,483 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:29:42,696 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:31:02,032 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:31:06,121 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:31:06,259 [INFO] cli.py: 🔄 Starting API server …
-2025-05-20 17:31:13,258 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:31:13,395 [INFO] cli.py: 🔄 Starting API server …
-2025-05-20 17:31:25,347 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:31:25,483 [INFO] cli.py: 🔄 Starting API server …
-2025-05-20 17:31:33,087 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:31:54,723 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:31:54,885 [INFO] cli.py: 🔄 Starting API server …
-2025-05-20 17:31:59,594 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:31:59,735 [INFO] cli.py: 🔄 Starting API server …
-2025-05-20 17:32:09,183 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:32:20,630 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:33:44,331 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:34:43,787 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:34:52,492 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:36:11,222 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:36:11,359 [INFO] cli.py: 🔄 Starting API server …
-2025-05-20 17:36:32,725 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:36:32,859 [INFO] cli.py: 🔄 Starting API server …
-2025-05-20 17:39:57,053 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:39:57,686 [INFO] cli.py: 🔄 Starting API server …
-2025-05-20 17:40:04,114 [INFO] config.py: Settings loaded successfully
-2025-05-20 17:40:04,695 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 08:50:50,942 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:50:51,846 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:50:52,022 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 08:50:59,624 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:52:47,957 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:52:48,959 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:52:49,195 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 08:52:56,610 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:54:26,855 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:54:27,887 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:54:28,121 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 08:54:35,547 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:55:53,803 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:55:54,729 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:55:54,905 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 08:56:02,491 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:56:25,652 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:56:26,593 [INFO] config.py: Settings loaded successfully
+2025-05-26 08:56:26,807 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 09:05:03,426 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:05:04,456 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:05:04,656 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 09:05:12,118 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:11:02,245 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:11:03,574 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:11:04,062 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 09:11:10,949 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:13:12,590 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:13:13,570 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:13:13,966 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 09:13:15,955 [INFO] services.py: Enqueuing registration type=PendingType.FIREWALL ip=172.19.0.1
+2025-05-26 09:13:15,969 [INFO] services.py:  → queued with id=1 secret=bc02a5955c602001390d5c4c4a85d180
+2025-05-26 09:13:17,953 [INFO] services.py: Enqueuing registration type=PendingType.REVERSE_PROXY ip=192.168.87.10
+2025-05-26 09:13:17,957 [INFO] services.py:  → queued with id=2 secret=759a7b666809aa5b4f04c8d87b9d11b7
+2025-05-26 09:13:21,231 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:13:21,413 [INFO] services.py: approve_registration called id=1 action=approve
+2025-05-26 09:13:21,416 [INFO] services.py: Persisting new entity uuid=cf1700d0-947f-46b9-989c-df24e361143c for type=PendingType.FIREWALL
+2025-05-26 09:13:21,421 [INFO] services.py: Notifying agent action=approve secret=bc02a5955c602001390d5c4c4a85d180 kwargs={'uuid': 'cf1700d0-947f-46b9-989c-df24e361143c', 'token': 'bd7e3c4b91810e23b8f52121470ae277'}
+2025-05-26 09:13:21,426 [INFO] services.py: Approval succeeded, deleting pending id=1
+2025-05-26 09:13:25,433 [INFO] services.py: approve_registration called id=2 action=approve
+2025-05-26 09:13:25,434 [INFO] services.py: Persisting new entity uuid=97f53f62-b5d7-474d-ad71-504fa6429d62 for type=PendingType.REVERSE_PROXY
+2025-05-26 09:13:25,440 [INFO] services.py: Notifying agent action=approve secret=759a7b666809aa5b4f04c8d87b9d11b7 kwargs={'uuid': '97f53f62-b5d7-474d-ad71-504fa6429d62', 'token': 'a9be12c5cf8d7b179382221270e80fbb'}
+2025-05-26 09:13:25,443 [INFO] services.py: Running post‑hook _push_reverse_proxy_to_firewalls for entity uuid=97f53f62-b5d7-474d-ad71-504fa6429d62
+2025-05-26 09:13:25,443 [INFO] services.py: Registering reverse‑proxy 97f53f62-b5d7-474d-ad71-504fa6429d62 with all firewalls
+2025-05-26 09:13:25,444 [INFO] services.py:  → pushing to firewall uuid=cf1700d0-947f-46b9-989c-df24e361143c api=http://192.168.87.10:8000/
+2025-05-26 09:13:25,459 [INFO] services.py:    ✖ push failed: ReverseProxy.__init__() missing 4 required positional arguments: 'name', 'ip', 'ports', and 'allowed_ips'
+Traceback (most recent call last):
+  File "/app/core/services.py", line 78, in _push_reverse_proxy_to_firewalls
+    client.create_reverse_proxy(
+  File "/app/core/clients/firewall_agent.py", line 95, in create_reverse_proxy
+    return ReverseProxy(**data)
+           ^^^^^^^^^^^^^^^^^^^^
+TypeError: ReverseProxy.__init__() missing 4 required positional arguments: 'name', 'ip', 'ports', and 'allowed_ips'
+2025-05-26 09:13:25,460 [INFO] services.py: Post‑hook failed, rolling back: ReverseProxy.__init__() missing 4 required positional arguments: 'name', 'ip', 'ports', and 'allowed_ips'
+Traceback (most recent call last):
+  File "/app/core/services.py", line 216, in _approve
+    hook(db, entity)
+  File "/app/core/services.py", line 78, in _push_reverse_proxy_to_firewalls
+    client.create_reverse_proxy(
+  File "/app/core/clients/firewall_agent.py", line 95, in create_reverse_proxy
+    return ReverseProxy(**data)
+           ^^^^^^^^^^^^^^^^^^^^
+TypeError: ReverseProxy.__init__() missing 4 required positional arguments: 'name', 'ip', 'ports', and 'allowed_ips'
+2025-05-26 09:15:02,576 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:15:03,517 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:15:03,854 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 09:15:11,228 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:16:19,779 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:16:32,063 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:16:33,125 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:16:33,568 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 09:16:40,825 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:27:41,263 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:27:42,476 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:28:42,844 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:28:43,855 [INFO] config.py: Settings loaded successfully
+2025-05-26 09:28:44,285 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 09:28:51,709 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:30:04,200 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:30:05,430 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:30:05,764 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:30:13,037 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:30:18,763 [ERROR] api.py: Failed to register service on firewall: 'FirewallAgentClient' object has no attribute 'create_service'
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_service(
+    ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'FirewallAgentClient' object has no attribute 'create_service'
+2025-05-26 11:30:18,773 [ERROR] api.py: Failed to register service on firewall: 'FirewallAgentClient' object has no attribute 'create_service'
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_service(
+    ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'FirewallAgentClient' object has no attribute 'create_service'
+2025-05-26 11:30:18,783 [ERROR] api.py: Failed to register service on firewall: 'FirewallAgentClient' object has no attribute 'create_service'
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_service(
+    ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'FirewallAgentClient' object has no attribute 'create_service'
+2025-05-26 11:32:50,476 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:32:51,951 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:32:52,264 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:32:59,352 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:33:05,203 [ERROR] api.py: Failed to register service on firewall: FirewallAgentClient.create_alias() got an unexpected keyword argument 'service'
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+TypeError: FirewallAgentClient.create_alias() got an unexpected keyword argument 'service'
+2025-05-26 11:33:05,211 [ERROR] api.py: Failed to register service on firewall: FirewallAgentClient.create_alias() got an unexpected keyword argument 'service'
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+TypeError: FirewallAgentClient.create_alias() got an unexpected keyword argument 'service'
+2025-05-26 11:33:05,220 [ERROR] api.py: Failed to register service on firewall: FirewallAgentClient.create_alias() got an unexpected keyword argument 'service'
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+TypeError: FirewallAgentClient.create_alias() got an unexpected keyword argument 'service'
+2025-05-26 11:33:35,057 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:33:36,419 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:33:36,806 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:33:44,133 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:34:02,246 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:34:12,272 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:34:22,292 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:35:55,828 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:35:56,059 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:38:00,146 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:38:01,393 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:38:01,679 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:38:09,118 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:38:25,528 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:38:35,552 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:38:43,898 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 300, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+http.client.RemoteDisconnected: Remote end closed connection without response
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 38, in reraise
+    raise value.with_traceback(tb)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 300, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+urllib3.exceptions.ProtocolError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 682, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:44:07,785 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:44:09,384 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:44:09,715 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:44:29,535 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:45:03,355 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:45:04,762 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:45:05,104 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:45:15,850 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:45:46,098 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:45:56,126 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:46:06,175 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:48:37,106 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:48:38,773 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:48:39,128 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:48:45,987 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:49:01,475 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:49:11,500 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:49:21,516 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:49:40,095 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:49:40,963 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:49:41,144 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:49:48,762 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:50:04,209 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:50:14,220 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:50:24,236 [ERROR] api.py: Failed to register service on firewall: cannot access local variable 'resp' where it is not associated with a value
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connection.py", line 516, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 1430, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.12/http/client.py", line 331, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/http/client.py", line 292, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 72, in _request
+    resp = requests.request(method, url, json=json, timeout=self.timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPConnectionPool(host='192.168.87.10', port=8000): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 75, in _request
+    logging.error(f"{method} {url} failed: {exc}, response={getattr(resp, 'text', None)}")
+                                                                    ^^^^
+UnboundLocalError: cannot access local variable 'resp' where it is not associated with a value
+2025-05-26 11:57:55,449 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:57:56,407 [INFO] config.py: Settings loaded successfully
+2025-05-26 11:57:56,601 [INFO] cli.py: 🔄 Starting API server …
+2025-05-26 11:58:04,145 [INFO] config.py: Settings loaded successfully
+2025-05-30 18:49:46,864 [INFO] config.py: Settings loaded successfully
+2025-05-30 18:49:48,915 [INFO] config.py: Settings loaded successfully
+2025-05-30 18:49:49,254 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 18:50:03,953 [INFO] config.py: Settings loaded successfully
+2025-05-30 18:50:04,813 [INFO] config.py: Settings loaded successfully
+2025-05-30 18:50:04,988 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 18:50:12,613 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:12:09,536 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:12:11,056 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:12:11,431 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:13:17,224 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:13:23,353 [ERROR] firewall_agent.py: POST http://192.168.87.10:8000/aliases failed: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases, response=Internal Server Error
+2025-05-30 22:13:23,353 [ERROR] api.py: Failed to register service on firewall: POST http://192.168.87.10:8000/aliases failed
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 73, in _request
+    resp.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 76, in _request
+    raise FirewallAgentClientError(f"{method} {url} failed")
+core.clients.firewall_agent.FirewallAgentClientError: POST http://192.168.87.10:8000/aliases failed
+2025-05-30 22:13:23,420 [ERROR] firewall_agent.py: POST http://192.168.87.10:8000/aliases failed: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases, response=Internal Server Error
+2025-05-30 22:13:23,421 [ERROR] api.py: Failed to register service on firewall: POST http://192.168.87.10:8000/aliases failed
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 73, in _request
+    resp.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 76, in _request
+    raise FirewallAgentClientError(f"{method} {url} failed")
+core.clients.firewall_agent.FirewallAgentClientError: POST http://192.168.87.10:8000/aliases failed
+2025-05-30 22:13:23,485 [ERROR] firewall_agent.py: POST http://192.168.87.10:8000/aliases failed: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases, response=Internal Server Error
+2025-05-30 22:13:23,485 [ERROR] api.py: Failed to register service on firewall: POST http://192.168.87.10:8000/aliases failed
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 73, in _request
+    resp.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 76, in _request
+    raise FirewallAgentClientError(f"{method} {url} failed")
+core.clients.firewall_agent.FirewallAgentClientError: POST http://192.168.87.10:8000/aliases failed
+2025-05-30 22:18:37,908 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:18:39,103 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:18:39,386 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:18:46,580 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:18:51,995 [ERROR] firewall_agent.py: POST http://192.168.87.10:8000/aliases failed: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases, response=Internal Server Error
+2025-05-30 22:18:51,995 [ERROR] api.py: Failed to register service on firewall: POST http://192.168.87.10:8000/aliases failed
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 73, in _request
+    resp.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 76, in _request
+    raise FirewallAgentClientError(f"{method} {url} failed")
+core.clients.firewall_agent.FirewallAgentClientError: POST http://192.168.87.10:8000/aliases failed
+2025-05-30 22:22:00,246 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:22:01,121 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:22:01,300 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:22:08,901 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:22:14,335 [ERROR] firewall_agent.py: POST http://192.168.87.10:8000/aliases failed: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases, response=Internal Server Error
+2025-05-30 22:22:14,335 [ERROR] api.py: Failed to register service on firewall: POST http://192.168.87.10:8000/aliases failed
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 73, in _request
+    resp.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 76, in _request
+    raise FirewallAgentClientError(f"{method} {url} failed")
+core.clients.firewall_agent.FirewallAgentClientError: POST http://192.168.87.10:8000/aliases failed
+2025-05-30 22:22:14,388 [ERROR] firewall_agent.py: POST http://192.168.87.10:8000/aliases failed: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases, response=Internal Server Error
+2025-05-30 22:22:14,388 [ERROR] api.py: Failed to register service on firewall: POST http://192.168.87.10:8000/aliases failed
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 73, in _request
+    resp.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 76, in _request
+    raise FirewallAgentClientError(f"{method} {url} failed")
+core.clients.firewall_agent.FirewallAgentClientError: POST http://192.168.87.10:8000/aliases failed
+2025-05-30 22:22:14,457 [ERROR] firewall_agent.py: POST http://192.168.87.10:8000/aliases failed: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases, response=Internal Server Error
+2025-05-30 22:22:14,459 [ERROR] api.py: Failed to register service on firewall: POST http://192.168.87.10:8000/aliases failed
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 73, in _request
+    resp.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 76, in _request
+    raise FirewallAgentClientError(f"{method} {url} failed")
+core.clients.firewall_agent.FirewallAgentClientError: POST http://192.168.87.10:8000/aliases failed
+2025-05-30 22:23:21,280 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:23:22,159 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:23:22,335 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:23:29,941 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:28:29,960 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:28:30,964 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:28:31,203 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:28:38,626 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:38:20,219 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:38:21,408 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:38:21,681 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:38:28,870 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:42:46,662 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:42:47,567 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:42:47,746 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:42:55,312 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:50:35,828 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:50:36,867 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:50:37,119 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:50:44,493 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:50:50,024 [ERROR] firewall_agent.py: POST http://192.168.87.10:8000/aliases failed: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases, response=Internal Server Error
+2025-05-30 22:50:50,025 [ERROR] api.py: Failed to register service on firewall: POST http://192.168.87.10:8000/aliases failed
+Traceback (most recent call last):
+  File "/app/core/clients/firewall_agent.py", line 73, in _request
+    resp.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: http://192.168.87.10:8000/aliases
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/core/api.py", line 135, in create_service
+    client.create_alias(
+  File "/app/core/clients/firewall_agent.py", line 113, in create_alias
+    data = self._request(
+           ^^^^^^^^^^^^^^
+  File "/app/core/clients/firewall_agent.py", line 76, in _request
+    raise FirewallAgentClientError(f"{method} {url} failed")
+core.clients.firewall_agent.FirewallAgentClientError: POST http://192.168.87.10:8000/aliases failed
+2025-05-30 22:52:26,112 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:52:27,069 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:52:27,250 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:52:34,763 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:55:56,478 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:55:57,513 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:55:57,791 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:56:05,180 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:56:24,965 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:56:26,033 [INFO] config.py: Settings loaded successfully
+2025-05-30 22:56:26,299 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 22:56:33,630 [INFO] config.py: Settings loaded successfully
+2025-05-30 23:05:15,763 [INFO] config.py: Settings loaded successfully
+2025-05-30 23:05:16,999 [INFO] config.py: Settings loaded successfully
+2025-05-30 23:05:17,278 [INFO] cli.py: 🔄 Starting API server …
+2025-05-30 23:05:24,576 [INFO] config.py: Settings loaded successfully

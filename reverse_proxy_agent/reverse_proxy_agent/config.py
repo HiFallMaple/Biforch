@@ -12,7 +12,7 @@ import logging
 import logging.config
 import sys
 from pathlib import Path
-from typing import Literal, List
+from typing import List
 
 from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings
@@ -31,7 +31,6 @@ class Settings(BaseSettings):
         REVERSE_PROXY_PORTS: List of ports exposed by the reverse proxy
 
         AGENT_NAME: Logical name of this agent
-        CALLBACK_PATH: Endpoint path for Core callbacks
 
         PROXY_BACKEND: Proxy engine type (nginx, caddy, traefik, haproxy)
         TIMEOUT: HTTP request timeout (seconds)
@@ -41,51 +40,32 @@ class Settings(BaseSettings):
         RELOAD: Enable Uvicorn auto-reload in development
     """
     # default put db in data dir
-    DB_PATH: Path = Field(
-        "./data/db.sqlite",
-        description="Path to SQLite database file",
-    )
-    CONFIG_DIR: Path = Field(...,
-                             description="Directory for proxy config snippets")
+    DB_PATH: Path = Field("./data/db.sqlite", description="Path to SQLite database file",)
+    CONFIG_DIR: Path = Field(..., description="Directory for proxy config snippets")
 
     # External service URLs
     CORE_URL: AnyHttpUrl = Field(..., description="Biforch Core service URL")
-    AGENT_URL: AnyHttpUrl = Field(...,
-                                  description="This agent's callback/API URL")
+    AGENT_URL: AnyHttpUrl = Field(..., description="This agent's callback/API URL")
 
     # Reverse proxy network settings
-    REVERSE_PROXY_IP: str = Field(...,
-                                  description="IP address for reverse proxy to bind")
+    REVERSE_PROXY_IP: str = Field(..., description="IP address for reverse proxy to bind")
     REVERSE_PROXY_PORTS: List[int] = Field(
-        default_factory=list,
-        description="Ports exposed by reverse proxy, as a list or comma-separated string"
-    )
+        default_factory=list, description="Ports exposed by reverse proxy, as a list or comma-separated string")
 
     # Identification
     AGENT_NAME: str = Field(...,
                             description="Logical name of the reverse proxy agent")
-    CALLBACK_PATH: str = Field(
-        "/registrations", description="Endpoint path for Core callback"
-    )
 
     # Proxy backend selection
-    PROXY_BACKEND: Literal["nginx", "caddy", "traefik", "haproxy"] = Field(
-        ..., description="Proxy engine type"
-    )
+    PROXY_BACKEND: str = Field(..., description="Backend engine module name")
 
     # Runtime behavior
     TIMEOUT: int = Field(..., description="HTTP request timeout in seconds")
 
     # Server settings
-    INTERNAL_HOST: str = Field(
-        "0.0.0.0", description="Uvicorn bind host"
-    )
-    INTERNAL_PORT: int = Field(
-        8000, description="Uvicorn bind port"
-    )
-    RELOAD: bool = Field(
-        False, description="Enable Uvicorn auto-reload in development"
-    )
+    INTERNAL_HOST: str = Field("0.0.0.0", description="Uvicorn bind host")
+    INTERNAL_PORT: int = Field(8000, description="Uvicorn bind port")
+    RELOAD: bool = Field(False, description="Enable Uvicorn auto-reload in development")
 
     # Logging
     LOG_FILE_PATH: Path = Field("./data/.log", description="Path to log file")
@@ -98,6 +78,30 @@ class Settings(BaseSettings):
     }
 
     # ---------------------- Validators ----------------------
+    @field_validator("PROXY_BACKEND", mode="before")
+    @classmethod
+    def _validate_backend_exists(cls, value: str) -> str:
+        """
+        Fail fast if the requested backend does not exist **without importing it**.
+
+        Importing would execute `reverse_proxy_agent.backends.__init__` and pull `settings`
+        a second time, leading to a circular-import error while `Settings()` is still
+        being constructed.  Instead, simply check that the file
+        `<package_root>/backends/<backend>.py` is present.
+        """
+        backend = value.lower()
+
+        # `config.py` itself lives directly in `reverse_proxy_agent`, so this is the package root
+        package_root = Path(__file__).resolve().parent
+        backend_file = package_root / "backends" / f"{backend}.py"
+
+        if not backend_file.is_file():
+            raise ValueError(
+                f"Backend '{backend}' was not found under '{backend_file.parent}'."
+            )
+
+        return backend
+
     @field_validator("DB_PATH", mode="before")
     @classmethod
     def _validate_db_path(cls, v: str | Path) -> Path:
@@ -229,7 +233,7 @@ LOGGING_CONFIG: dict = {
     "loggers": {
         "": {
             "handlers": ["console", "file"],
-            "level": "INFO",
+            "level": "DEBUG",
             "propagate": False,
         },
     },

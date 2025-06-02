@@ -30,9 +30,17 @@ pytest-mock    = "^3.12"
 factory-boy    = "^3.3"
 freezegun      = "^1.4"
 
+
 # ---------- CLI entry ----------
+ruff = "^0.11.12"
 [tool.poetry.scripts]
 firewall-agent = "firewall_agent.cli:app"
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["F", "I", "UP"]
 
 # ---------- Build backend ----------
 [build-system]

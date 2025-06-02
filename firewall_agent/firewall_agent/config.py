@@ -5,7 +5,6 @@ import logging
 import logging.config
 import sys
 from pathlib import Path
-from typing import Dict
 
 from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings
@@ -18,74 +17,80 @@ class Settings(BaseSettings):
     - Loads settings from environment variables via pydantic-settings
     - Validates values on startup (fails fast)
     """
-    # External service URLs
+
+    # ---------- External service URLs ----------
     CORE_URL: AnyHttpUrl = Field(..., description="URL of Biforch Core service")
-    REMOTE_URL: AnyHttpUrl = Field(..., description="Base URL of OPNsense firewall")
+    REMOTE_URL: AnyHttpUrl = Field(..., description="Base URL of firewall backend")
     AGENT_URL: AnyHttpUrl = Field(..., description="Callback/API URL of this agent")
 
-    # Firewall authentication
-    API_KEY: str = Field(..., description="OPNsense API key")
-    API_SECRET: str = Field(..., description="OPNsense API secret")
+    # ---------- OPNsense ----------
+    OPNSENSE_API_KEY: str = Field(..., description="OPNsense API key")
+    OPNSENSE_API_SECRET: str = Field(..., description="OPNsense API secret")
 
-    # Alias configuration
-    PREFIX: str = Field(
-        "Biforch_",
+    # ---------- FortiGate ----------
+    FORTIGATE_API_TOKEN: str = Field(..., description="FortiGate REST API token (Bearer)")
+    FORTIGATE_VDOM: str = Field(..., min_length=1, description="FortiGate VDOM name")
+
+    # ---------- Backend plug-in ----------
+    FIREWALL_BACKEND: str = Field(
+        "opnsense",
+        description="Backend engine module name under firewall_agent.backends.*",
         min_length=1,
-        description="Prefix for OPNsense aliases"
     )
+
+    # ---------- Alias configuration ----------
+    PREFIX: str = Field("Biforch_", min_length=1, description="Prefix for aliases")
     AGENT_NAME: str = Field(..., description="Logical name of this agent")
-    CALLBACK_PATH: str = Field(
-        "/registrations",
-        description="Core callback endpoint path"
-    )
 
-    # Runtime behavior
-    TIMEOUT: int = Field(
-        10,
-        description="Outbound HTTP timeout in seconds",
-        gt=0
-    )
-    DB_PATH: Path = Field(
-        "./data/db.sqlite",
-        description="Path to SQLite database file"
-    )
+    # ---------- Runtime behavior ----------
+    TIMEOUT: int = Field(10, description="Outbound HTTP timeout in seconds", gt=0)
+    DB_PATH: Path = Field("./data/db.sqlite", description="Path to SQLite database file")
 
-    # Server settings
-    INTERNAL_HOST: str = Field(
-        "0.0.0.0",
-        description="Uvicorn server host"
-    )
-    INTERNAL_PORT: int = Field(
-        8000,
-        description="Uvicorn server port",
-        ge=1,
-        le=65535
-    )
-    RELOAD: bool = Field(
-        False,
-        description="Enable Uvicorn auto-reload in development"
-    )
+    # ---------- API server ----------
+    INTERNAL_HOST: str = Field("0.0.0.0", description="Uvicorn server host")
+    INTERNAL_PORT: int = Field(8000, description="Uvicorn server port", ge=1, le=65535)
+    RELOAD: bool = Field(False, description="Enable Uvicorn auto-reload in development")
 
-    # Internal mappings
-    ACTION_MAP: Dict[str, str] = Field(
+    # ---------- Misc ----------
+    ACTION_MAP: dict[str, str] = Field(
         default_factory=lambda: {"pass": "pass", "block": "block", "reject": "block"},
-        description="Map OPNsense actions to Core contract"
+        description="Map OPNsense actions to Core contract",
     )
 
-    # Logging
-    LOG_FILE_PATH: Path = Field(
-        "./data/.log",
-        description="Path to log file"
-    )
+    LOG_FILE_PATH: Path = Field("./data/.log", description="Path to log file")
 
-    # Pydantic settings
+    # ---------- Pydantic settings ----------
     model_config = {
         "extra": "ignore",
         "case_sensitive": True,
         "env_file": ".env",
     }
 
-    # ---------------------- Validators ----------------------
+    # ----------------------------- Validators -----------------------------
+    @field_validator("FIREWALL_BACKEND", mode="before")
+    @classmethod
+    def _validate_backend_exists(cls, value: str) -> str:
+        """
+        Fail fast if the requested backend does not exist **without importing it**.
+
+        Importing would execute `firewall_agent.backends.__init__` and pull `settings`
+        a second time, leading to a circular-import error while `Settings()` is still
+        being constructed.  Instead, simply check that the file
+        `<package_root>/backends/<backend>.py` is present.
+        """
+        backend = value.lower()
+
+        # `config.py` itself lives directly in `firewall_agent`, so this is the package root
+        package_root = Path(__file__).resolve().parent
+        backend_file = package_root / "backends" / f"{backend}.py"
+
+        if not backend_file.is_file():
+            raise ValueError(
+                f"Backend '{backend}' was not found under '{backend_file.parent}'."
+            )
+
+        return backend
+
     @field_validator("DB_PATH", mode="before")
     @classmethod
     def _validate_db_path(cls, v: str | Path) -> Path:
@@ -120,16 +125,9 @@ class Settings(BaseSettings):
             raise ValueError("PREFIX cannot be empty")
         return v
 
-    @field_validator("CALLBACK_PATH", mode="before")
-    @classmethod
-    def _validate_callback_path(cls, v: str) -> str:
-        if not v.startswith("/"):
-            raise ValueError("CALLBACK_PATH must start with '/'")
-        return v
-
     @field_validator("ACTION_MAP", mode="before")
     @classmethod
-    def _validate_action_map(cls, v: Dict[str, str]) -> Dict[str, str]:
+    def _validate_action_map(cls, v: dict[str, str]) -> dict[str, str]:
         if not isinstance(v, dict) or not v:
             raise ValueError("ACTION_MAP must be a non-empty dict")
         return v
@@ -147,6 +145,7 @@ class Settings(BaseSettings):
         return bool(v)
 
 
+# ----------------------------- Logging setup -----------------------------
 LOGGING_CONFIG: dict = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -167,7 +166,7 @@ LOGGING_CONFIG: dict = {
             "class": "logging.FileHandler",
             "level": "INFO",
             "formatter": "standard",
-            "filename": ".log",
+            "filename": ".log",  # will be overwritten after settings load
             "mode": "a",
         },
         "console": {
@@ -180,23 +179,21 @@ LOGGING_CONFIG: dict = {
     "loggers": {
         "": {
             "handlers": ["console", "file"],
-            "level": "INFO",
+            "level": "DEBUG",
             "propagate": False,
         },
     },
 }
 
-# Instantiate settings (fails on validation error)
+# ----------------------------- Instantiate -------------------------------
 try:
     settings = Settings()
     LOGGING_CONFIG["handlers"]["file"]["filename"] = settings.LOG_FILE_PATH
     logging.config.dictConfig(LOGGING_CONFIG)
     logging.info("Settings loaded successfully")
 except ValidationError as exc:
-    logging.error("🚨 Configuration error:\n", exc, file=sys.stderr)
+    logging.error("🚨 Configuration error:\n%s", exc, exc_info=False)
     sys.exit(1)
 
-
 if __name__ == "__main__":
-    settings_json = settings.model_dump_json(indent=2)
-    logging.info(f"{settings_json}")
+    print(settings.model_dump_json(indent=2))

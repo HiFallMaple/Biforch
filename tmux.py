@@ -19,10 +19,10 @@ PROJECT_DIR = Path(__file__).resolve().parent
 SESSION_NAME = "Biforch"
 # The three commands to run in each pane
 COMMANDS = [
-    f"cd {PROJECT_DIR}/core && python3 core.py",
-    f"cd {PROJECT_DIR}/firewall_agent && docker compose -f docker-compose.dev.yml up --force-recreate",
+    f"cd {PROJECT_DIR}/core && docker compose -f docker-compose.dev.yml up",
+    f"sleep 1 && cd {PROJECT_DIR}/firewall_agent && docker compose -f docker-compose.dev.yml up --force-recreate",
     f"sleep 4 && cd {PROJECT_DIR}/reverse_proxy_agent && ./entrypoint.sh",
-    f"sleep 6 && cd {PROJECT_DIR}/core && python3 setup.py",
+    f"sleep 8 && cd {PROJECT_DIR}/core && python3 setup.py",
 ]
 
 # ---------------------------------------------------------------------------

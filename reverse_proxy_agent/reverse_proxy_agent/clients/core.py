@@ -1,7 +1,10 @@
-import logging
-import requests
-from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
+from typing import Any
+
+import requests
+
+from ..config import logging
+
 
 # ---------------------------------------------------------------------
 # Data models
@@ -26,7 +29,7 @@ class PendingItem:
 class PendingApprove:
     id: int
     status: str
-    entity_id: Optional[int]
+    entity_id: int | None
 
 
 @dataclass
@@ -36,7 +39,7 @@ class Service:
 
 @dataclass
 class Rule:
-    firewall_rule_uuid: str
+    firewall_rule_id: str
 
 # ---------------------------------------------------------------------
 # Client implementation
@@ -52,8 +55,8 @@ class CoreClient:
     def __init__(
         self,
         base_url: str,
-        admin_token: Optional[str] = None,
-        actor_token: Optional[str] = None,
+        admin_token: str | None = None,
+        actor_token: str | None = None,
         timeout: int = 10,
     ):
         """
@@ -71,8 +74,8 @@ class CoreClient:
         """Set token for actor (firewall/proxy/discovery) calls."""
         self._actor_token = token
 
-    def _build_headers(self, admin: bool = False) -> Dict[str, str]:
-        headers: Dict[str, str] = {}
+    def _build_headers(self, admin: bool = False) -> dict[str, str]:
+        headers: dict[str, str] = {}
         if admin:
             if not self._admin_token:
                 raise CoreClientError(
@@ -89,7 +92,7 @@ class CoreClient:
         self,
         method: str,
         path: str,
-        json: Optional[Dict[str, Any]] = None,
+        json: dict[str, Any] | None = None,
         admin: bool = False,
         auth: bool = True,
     ) -> Any:
@@ -131,7 +134,7 @@ class CoreClient:
         return PendingRequest(**data)
 
     def register_reverse_proxy(
-        self, name: str, ip: str, ports: List[int], api_url: str
+        self, name: str, ip: str, ports: list[int], api_url: str
     ) -> PendingRequest:
         """Enqueue a reverse-proxy registration. No token needed."""
         data = self._request(
@@ -163,7 +166,7 @@ class CoreClient:
     # -----------------------------------------------------------------
     # Admin: pending operations
     # -----------------------------------------------------------------
-    def list_pending(self) -> List[PendingItem]:
+    def list_pending(self) -> list[PendingItem]:
         """List all pending registration requests (admin only)."""
         items = self._request('GET', '/pending_registrations', admin=True)
         return [PendingItem(**i) for i in items]
@@ -224,22 +227,22 @@ class CoreClient:
     # Actor: manage rules (firewall actor)
     # -----------------------------------------------------------------
     def create_rule(
-        self, firewall_rule_uuid: str, action: str, ip: str, service: str
+        self, firewall_rule_id: str, action: str, src_ip: str, service: str
     ) -> Rule:
         """Create a new firewall rule (firewall actor token required)."""
         data = self._request(
             'POST',
             '/rules',
             json={
-                'firewall_rule_uuid': firewall_rule_uuid,
+                'firewall_rule_uuid': firewall_rule_id,
                 'action': action,
-                'ip': ip,
+                'src_ip': src_ip,
                 'service': service,
             },
             admin=False,
         )
         return Rule(**data)
 
-    def delete_rule(self, firewall_rule_uuid: str) -> None:
+    def delete_rule(self, firewall_rule_id: str) -> None:
         """Delete a firewall rule (firewall actor token required)."""
-        self._request('DELETE', f'/rules/{firewall_rule_uuid}', admin=False)
+        self._request('DELETE', f'/rules/{firewall_rule_id}', admin=False)

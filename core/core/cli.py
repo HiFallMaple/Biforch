@@ -4,11 +4,10 @@
 """
 Command-line interface for Biforch Core.
 """
-import logging
 import typer
 import uvicorn
 
-from .config import settings
+from .config import settings, logging
 
 app = typer.Typer(help="Biforch Core CLI")
 

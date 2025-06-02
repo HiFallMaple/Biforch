@@ -1,5 +1,6 @@
 """ORM definitions – mirror local state for reverse‑proxies / aliases / rules."""
-from sqlalchemy import Column, Integer, String, DateTime, func
+from sqlalchemy import Column, DateTime, Integer, String, func
+
 from .database import Base, engine
 
 
@@ -16,7 +17,7 @@ class ReverseProxyDB(Base):
 class AliasDB(Base):
     __tablename__ = "aliases"
 
-    id = Column(String(36), primary_key=True, index=True)  # OPNsense UUID
+    id = Column(String(36), primary_key=True, index=True)
     service_name = Column(String, nullable=False)
 
 
@@ -24,7 +25,7 @@ class RuleDB(Base):
     __tablename__ = "rules"
 
     id = Column(Integer, primary_key=True, index=True)
-    firewall_rule_uuid = Column(String, nullable=False, unique=True)
+    firewall_rule_id = Column(String, nullable=False, unique=True)
     action = Column(String, nullable=False)
     src_ip = Column(String, nullable=False)
     dest_alias_id = Column(String(36), nullable=False)

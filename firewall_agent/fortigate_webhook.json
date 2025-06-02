@@ -1,0 +1,23 @@
+{
+	"date": "2025-05-30",
+	"time": "14:14:13",
+	"devid": "FGVMEVZVP5WHDT3A",
+	"devname": "FGVMEVZVP5WHDT3A",
+	"eventtime": "1748639652978330609",
+	"tz": "-0700",
+	"logid": "0100044547",
+	"type": "event",
+	"subtype": "system",
+	"level": "information",
+	"vd": "root",
+	"logdesc": "Object attribute configured",
+	"user": "admin",
+	"ui": "GUI(192.168.87.2)",
+	"action": "Edit",
+	"cfgtid": "170131471",
+	"uuid": "30d04188-3a31-51f0-3202-f0f8c0e26875",
+	"cfgpath": "firewall.policy",
+	"cfgobj": "2",
+	"cfgattr": "status[enable->disable]",
+	"msg": "Edit firewall.policy 2"
+}

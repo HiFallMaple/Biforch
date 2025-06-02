@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-IGNORE="__pycache__|.pytest_cache|venv|*.db|*.sqlite|htmlcov|pytest.ini|show_project.sh|reset.py|setup.py|.log|poetry.lock|.git|.coverage"
+IGNORE="__pycache__|.pytest_cache|venv|*.db|*.sqlite|htmlcov|pytest.ini|show_project.sh|reset.py|setup.py|.log|poetry.lock|.git|.coverage|test_responses|.ruff_cache|*.json"
 
 echo "============================== PROJECT TREE =============================="
 tree -aI "$IGNORE"

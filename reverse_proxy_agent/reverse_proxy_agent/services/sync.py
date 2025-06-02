@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import logging
 from typing import Dict, List
 
 from sqlalchemy.orm import Session
 
 from ..clients import core
+from ..config import logging
 from ..models import AgentCredentials, RuleDB, ServiceDB
 from ..backends import backend
 from ..dependencies import get_core_client

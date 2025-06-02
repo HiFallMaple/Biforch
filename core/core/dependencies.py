@@ -42,7 +42,7 @@ def get_current_actor(
         creds: HTTPAuthorizationCredentials = Depends(security_scheme),
         db: Session = Depends(get_db),
     ):
-        token = creds.credentials
+        token = str(creds.credentials)
         if ActorRole.ADMIN in allowed_roles and token == settings.ADMIN_TOKEN.get_secret_value():
             return None
         if ActorRole.FIREWALL in allowed_roles:
