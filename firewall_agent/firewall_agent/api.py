@@ -29,12 +29,14 @@ from .schemas import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Background thread monitors firewall every 10 s."""
+    # import threading, time
+    # from .services.sync import sync_firewall
     # stop = threading.Event()
     # db: Session = next(get_db())  # type: ignore[arg-type]
     # def _worker():
     #     while not stop.is_set():
     #         sync_firewall(db)
-    #         time.sleep(10)
+    #         time.sleep(180)
 
     # thread = threading.Thread(target=_worker, daemon=True)
     # thread.start()
@@ -47,6 +49,22 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Firewall Agent", lifespan=lifespan)
+
+# ---------------------------------------------------------------- Sync
+@app.get("/sync")
+def sync(
+    db=Depends(get_db),
+):
+    """
+    Trigger a manual sync with the firewall backend.
+    This is useful for testing and debugging purposes.
+    """
+    logging.info("Manual sync requested")
+    from .services.sync import sync_firewall
+    sync_firewall(db)    
+    return
+
+
 
 # ---------------------------------------------------------------- Webhook
 

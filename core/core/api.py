@@ -1,8 +1,7 @@
 from fastapi import FastAPI, Depends, Request, HTTPException
-from typing import List
 
 
-from .clients.factory import get_firewall_agent_client
+from .clients.factory import get_firewall_agent_client, get_reverse_proxy_agent_client
 from .config import logging
 from .dependencies import get_db, get_current_actor, ActorRole
 from .schemas import (
@@ -68,12 +67,12 @@ async def create_service_discovery(
 
 @app.get(
     "/pending_registrations",
-    response_model=List[PendingOut],
+    response_model=list[PendingOut],
     dependencies=[Depends(get_current_actor([ActorRole.ADMIN]))]
 )
 def list_pending(
     db=Depends(get_db)
-) -> List[PendingOut]:
+) -> list[PendingOut]:
     return db.query(PendingRegistrationDB)\
         .order_by(PendingRegistrationDB.created_at)\
         .all()
@@ -194,10 +193,108 @@ def create_rule(
         firewall_id=firewall.id,
     )
     db.add(rule)
-    db.commit()
+    db.flush()
+
+    try:
+        rp_client = get_reverse_proxy_agent_client(db, svc.reverse_proxy_uuid)
+        rp_client.create_rule(
+            service_id=svc.id,
+            action=body.action,
+            ip=body.src_ip,
+        )
+        db.commit()
+
+    except Exception as exc:
+        db.rollback()
+        logging.error(f"Failed to push rule to reverse-proxy: {exc}", exc_info=True)
+        raise HTTPException(502, f"Reverse-proxy sync failed: {exc}")
+
     db.refresh(rule)
     return RuleOut(firewall_rule_id=rule.firewall_rule_id)
 
+
+@app.put(
+    "/rules",
+    response_model=list[RuleOut],
+    summary="Replace *all* rules for one or more services"
+)
+def replace_rules(
+    rules_in: list[RuleIn],
+    firewall   = Depends(get_current_actor([ActorRole.FIREWALL])),
+    db= Depends(get_db),
+) -> list[RuleOut]:
+    """Full-replace rules service-by-service, then sync to reverse-proxy."""
+    if not rules_in:
+        raise HTTPException(400, "empty rule list")
+
+    # 1) group by service name
+    grouped: dict[str, list[RuleIn]] = {}
+    for r in rules_in:
+        grouped.setdefault(r.service, []).append(r)
+
+    # 2) verify every service exists
+    from .models import ServiceDB, RuleDB
+    svc_map: dict[str, ServiceDB] = {}
+    for svc_name in grouped:
+        svc = db.query(ServiceDB).filter_by(name=svc_name).first()
+        if not svc:
+            raise HTTPException(404, f"service '{svc_name}' not registered")
+        svc_map[svc_name] = svc
+
+    out: list[RuleOut] = []
+
+    try:
+        # 3) iterate each service and replace
+        for svc_name, items in grouped.items():
+            svc    = svc_map[svc_name]
+            svc_id = svc.id
+            rules_to_reverse_proxy = [{
+            "action": r.action,
+            "ip": r.src_ip,
+            } for r in items]
+            # 3-1 remove old rules for this firewall & service
+            db.query(RuleDB).filter_by(
+                service_id = svc_id,
+                firewall_id = firewall.id
+            ).delete(synchronize_session=False)
+
+            # 3-2 bulk insert new rules
+            new_db_rules: list[RuleDB] = [
+                RuleDB(
+                    firewall_rule_id = r.firewall_rule_id,
+                    action           = r.action,
+                    ip               = r.src_ip,
+                    service_id       = svc_id,
+                    firewall_id      = firewall.id,
+                )
+                for r in items
+            ]
+            db.add_all(new_db_rules)
+            db.flush()           # get auto IDs
+
+            # prepare output list
+            out.extend(
+                RuleOut(
+                    firewall_rule_id = r.firewall_rule_id,
+                )
+                for r in items
+            )
+
+            # 3-3 push full rule list to reverse-proxy agent
+            rp_client = get_reverse_proxy_agent_client(db, svc.reverse_proxy_uuid)
+            rp_client.replace_rules(
+                service_id = svc_id,
+                rules      = rules_to_reverse_proxy            # ← new client signature
+            )
+
+        # 4) commit ALL if every service succeeded
+        db.commit()
+        return out
+
+    except Exception as exc:
+        db.rollback()
+        logging.error("Bulk replace failed: %s", exc, exc_info=True)
+        raise HTTPException(502, f"Reverse-proxy sync failed: {exc}")
 
 @app.delete(
     "/rules/{firewall_rule_id}"
@@ -213,5 +310,26 @@ def delete_rule(
     ).first()
     if not rule:
         raise HTTPException(404, "rule not found or not yours")
+    svc_id = rule.service_id
     db.delete(rule)
-    db.commit()
+    db.flush()
+
+    try:
+        rp_client = get_reverse_proxy_agent_client(db, rule.service.reverse_proxy_uuid)
+        remaining = db.query(RuleDB).filter_by(service_id=svc_id).all()
+
+        if remaining:
+            rp_client.replace_rules(
+                service_id=svc_id,
+                action=remaining[0].action,
+                ip=",".join(r.ip for r in remaining),
+            )
+        else:
+            rp_client.delete_rules(service_id=svc_id)
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logging.error(f"Reverse-proxy rule update failed: {exc}", exc_info=True)
+        raise HTTPException(502, f"Reverse-proxy sync failed: {exc}")
+    db.refresh(rule)

@@ -22,7 +22,7 @@ from .services.sync import sync_to_backend, announce_new_service
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Path(settings.CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-    db: Session = next(get_db())  
+    db: Session = next(get_db())
     logging.info("Checking for new services in %s", settings.CONFIG_DIR)
     try:
         for cfg in Path(settings.CONFIG_DIR).glob("*.conf"):
@@ -55,23 +55,53 @@ def create_rule(service_id: int, body: RuleIn, db: Session = Depends(get_db)) ->
     sync_to_backend(db)
     return RuleOut(id=rule.id, service_id=service_id, action=rule.action, ip=rule.ip)
 
-
-@app.put("/rules/{service_id}", response_model=List[RuleOut])
-def replace_rules(service_id: int, body: RuleIn, db: Session = Depends(get_db)) -> List[RuleOut]:
+@app.put("/rules/{service_id}", response_model=list[RuleOut])
+def replace_rules(
+    service_id: int,
+    body: list[RuleIn],               # ← 改為 List
+    db: Session = Depends(get_db)
+) -> List[RuleOut]:
     """Replace all rules for the given service."""
+    if not body:
+        raise HTTPException(status_code=400, detail="empty rule list")
+
     svc = db.get(ServiceDB, service_id)
     if svc is None:
-        raise HTTPException(status_code=404, detail="Service not registered")
+        raise HTTPException(status_code=404, detail="service not registered")
 
-    db.query(RuleDB).filter_by(service_name=svc.name).delete()
-    rule = RuleDB(service_name=svc.name, action=body.action, ip=str(body.ip))
-    db.add(rule)
+    # 1. 清空舊規則
+    db.query(RuleDB).filter_by(service_name=svc.name).delete(synchronize_session=False)
+
+    # 2. 新增新規則
+    new_rules: List[RuleDB] = []
+    for item in body:
+        new_rules.append(
+            RuleDB(
+                service_name=svc.name,
+                action=item.action,
+                ip=str(item.ip)
+            )
+        )
+    db.add_all(new_rules)
     db.commit()
-    db.refresh(rule)
 
+    # 3. 重新整理物件以取得自動生成的 id
+    for r in new_rules:
+        db.refresh(r)
+
+    # 4. 與反向代理同步
     sync_to_backend(db)
 
-    return [RuleOut(id=rule.id, service_id=service_id, action=rule.action, ip=rule.ip)]
+    # 5. 組裝回傳
+    return [
+        RuleOut(
+            id=r.id,
+            service_id=service_id,
+            action=r.action,
+            ip=r.ip
+        )
+        for r in new_rules
+    ]
 
 
 @app.delete("/rules/{service_id}")

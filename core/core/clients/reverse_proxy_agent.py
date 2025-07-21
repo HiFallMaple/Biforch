@@ -1,18 +1,25 @@
 import requests
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
+from pydantic import BaseModel, IPvAnyNetwork
 
 from ..config import logging
 
 # ---------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------
+
+
 @dataclass
 class RuleOut:
     id: int
     service_id: int
     action: str
     ip: str
+
+class RuleIn(BaseModel):
+    action: str  # "pass" | "deny"
+    ip: IPvAnyNetwork
 
 @dataclass
 class RegistrationCallbackRequest:
@@ -35,6 +42,7 @@ class ReverseProxyAgentClient:
     Client for calling a Reverse Proxy Agent's REST API, including service rule management
     and registration callback.
     """
+
     def __init__(
         self,
         base_url: str,
@@ -78,12 +86,22 @@ class ReverseProxyAgentClient:
         )
         return RuleOut(**data)
 
-    def replace_rules(self, service_id: int, action: str, ip: str) -> List[RuleOut]:
-        """Replace all rules for a service."""
+    def replace_rules(
+        self,
+        service_id: int,
+        rules: List[RuleIn]
+    ) -> List[RuleOut]:
+        if not rules:
+            raise ValueError("rules list cannot be empty")
+
+        payload = [r
+            for r in rules
+        ]
+
         items = self._request(
-            'PUT',
-            f'/rules/{service_id}',
-            json={'action': action, 'ip': ip},
+            method='PUT',
+            path=f'/rules/{service_id}',
+            json=payload,
         )
         return [RuleOut(**i) for i in items]
 

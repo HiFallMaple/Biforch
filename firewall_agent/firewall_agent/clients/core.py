@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import requests
@@ -31,6 +31,12 @@ class PendingApprove:
     status: str
     entity_id: int | None
 
+@dataclass
+class RuleIn:
+    firewall_rule_id: str
+    action: str
+    src_ip: str
+    service: str
 
 @dataclass
 class Service:
@@ -242,6 +248,22 @@ class CoreClient:
             admin=False,
         )
         return Rule(**data)
+
+    def replace_rules(
+        self,
+        rules: list[RuleIn]
+    ) -> list[Rule]:
+        """Replace *all* rules for one or more services."""
+        if not rules:
+            raise ValueError("rules list cannot be empty")
+        payload = [asdict(r) for r in rules]
+
+        items = self._request(
+            method="PUT",
+            path="/rules",
+            json=payload,
+        )
+        return [Rule(**i) for i in items]
 
     def delete_rule(self, firewall_rule_id: str) -> None:
         """Delete a firewall rule (firewall actor token required)."""

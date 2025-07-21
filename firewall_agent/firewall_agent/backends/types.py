@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel
 
-Action = Literal["pass", "reject"]
+Action = Literal["pass", "deny"]
 
 class RuleInfo(BaseModel):
     firewall_rule_id: str

@@ -11,3 +11,5 @@ services:
       - .env
     ports:
       - "$PORT:8000"
+    cpus: "0.50"          # 最多使用半顆 CPU
+    mem_limit: 256m    

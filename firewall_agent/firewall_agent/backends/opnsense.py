@@ -1,6 +1,7 @@
 """OPNsense backend – wraps REST API calls used by the agent."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import requests
@@ -22,7 +23,7 @@ class OPNsenseBackend(FirewallBackend):
             settings.OPNSENSE_API_KEY,
             settings.OPNSENSE_API_SECRET,
         )
-        self.timeout: int = settings.TIMEOUT
+        self.timeout: int = 600
 
     # ---------------------------------------------------------------------
     # Internal helpers
@@ -75,17 +76,28 @@ class OPNsenseBackend(FirewallBackend):
 
     # ------------------------------------------------------------------ Rules
     def list_rules(self) -> dict[str, RuleInfo]:
-        """Return the table obtained from */firewall/filter/search_rule*."""
+        """Return the table obtained from */firewall/filter/search_rule* using up to 10 concurrent requests."""
         data = self._req("get", "/api/firewall/filter/search_rule").json()
         rows: list[dict[str, Any]] = data.get("rows", [])
-        rules: dict[str, RuleInfo] = dict()
-        for r in rows:
-            if r["enabled"] != "1":
-                logging.debug(f"rule_id: {r['uuid']} is disabled, skipping")
-                continue
-            rule: RuleInfo = self.rule_details(r["uuid"])
-            if rule is not None:
-                rules[r["uuid"]] = rule
+        # 篩出所有 enabled 的 UUID
+        uuids = [r["uuid"] for r in rows if r.get("enabled") == "1"]
+        rules: dict[str, RuleInfo] = {}
+
+        # 最多 200 條併發
+        with ThreadPoolExecutor(max_workers=200) as executor:
+            # 提交所有任務
+            futures = {executor.submit(self.rule_details, uuid): uuid for uuid in uuids}
+
+            for future in as_completed(futures):
+                uuid = futures[future]
+                try:
+                    rule = future.result()
+                except Exception as exc:
+                    logging.error(f"Error fetching details for rule {uuid}: {exc}")
+                else:
+                    if rule is not None:
+                        rules[uuid] = rule
+
         logging.debug(f"[opnsense] list_rules → {len(rules)} rows")
         return rules
 
@@ -100,11 +112,12 @@ class OPNsenseBackend(FirewallBackend):
             return None  # Rule is disabled, return None
         if not rule["destination_net"].startswith(settings.PREFIX):
             logging.debug(f"destination_net %s does not start with PREFIX {settings.PREFIX}, skipping")
-            return None  #destination_net is not start with PREFIX, return None
-        
+            return None  # destination_net is not start with PREFIX, return None
+
         action: Action = next(k for k, v in rule["action"].items() if v["selected"])
+        action = "pass" if action == "pass" else "deny"
         return RuleInfo(
-            uuid=rule_id,
+            firewall_rule_id=rule_id,
             action=action,
             src_ip=rule["source_net"],
             service=rule["destination_net"][len(settings.PREFIX):],

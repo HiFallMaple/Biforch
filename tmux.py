@@ -23,6 +23,7 @@ COMMANDS = [
     f"sleep 1 && cd {PROJECT_DIR}/firewall_agent && docker compose -f docker-compose.dev.yml up --force-recreate",
     f"sleep 4 && cd {PROJECT_DIR}/reverse_proxy_agent && ./entrypoint.sh",
     f"sleep 8 && cd {PROJECT_DIR}/core && python3 setup.py",
+    f"sleep 12 && cd {PROJECT_DIR}/ && ./monitor.sh",
 ]
 
 # ---------------------------------------------------------------------------

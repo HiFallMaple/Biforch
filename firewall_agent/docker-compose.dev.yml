@@ -10,3 +10,6 @@ services:
       - .env
     ports:
       - "$PORT:8000"
+
+    cpus: "0.50"
+    mem_limit: 256m    
